@@ -10,6 +10,7 @@ import {
   ParticipantEvent,
   type LocalParticipant,
   type ScreenShareCaptureOptions,
+  type TrackPublishOptions,
   RoomEvent,
   MediaDeviceFailure,
 } from "livekit-client";
@@ -718,6 +719,17 @@ export const createLocalMembership$ = ({
         selfBrowserSurface: "include",
         surfaceSwitching: "include",
         systemAudio: "include",
+        // Tells the VP8 encoder to optimize for spatial detail (text/UI)
+        // over framerate. Effective because VP8 is non-SVC; LiveKit forces
+        // "motion" for SVC codecs (VP9/AV1), so this hint would be lost there.
+        contentHint: "detail",
+      };
+      // Screen-share-only publish overrides. Codec stays VP8 (inherits from
+      // publishDefaults) so contentHint=detail actually takes effect.
+      const screensharePublishOptions: TrackPublishOptions = {
+        // Prefer dropping framerate over resolution under pressure — text
+        // stays readable even when bandwidth/CPU dips.
+        degradationPreference: "maintain-resolution",
       };
       const targetScreenshareState = !sharingScreen$.value;
       logger.info(
@@ -734,7 +746,11 @@ export const createLocalMembership$ = ({
       // is still initializing or publishing tracks, because there's no
       // technical reason to disallow this. LiveKit will publish if it can.
       participant$.value
-        ?.setScreenShareEnabled(targetScreenshareState, screenshareSettings)
+        ?.setScreenShareEnabled(
+          targetScreenshareState,
+          screenshareSettings,
+          screensharePublishOptions,
+        )
         .catch(logger.error);
     };
   }

@@ -24,7 +24,15 @@ const defaultLiveKitPublishOptions: TrackPublishDefaults = {
   forceStereo: false,
   simulcast: true,
   videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360] as VideoPreset[],
-  screenShareEncoding: ScreenSharePresets.h1080fps30.encoding,
+  // Lower screen-share ceiling: 1080p15 @ 2.5Mbps gives sharper text per bit
+  // than 1080p30 @ 5Mbps and is far easier on publisher CPU.
+  screenShareEncoding: ScreenSharePresets.h1080fps15.encoding,
+  // Provide a real mid-tier layer so the SFU isn't stuck choosing between
+  // blurry 540p and full 1080p. Order: low → high.
+  screenShareSimulcastLayers: [
+    ScreenSharePresets.h360fps3,
+    ScreenSharePresets.h720fps5,
+  ] as VideoPreset[],
   stopMicTrackOnMute: false,
   videoCodec: "vp8",
   videoEncoding: VideoPresets.h720.encoding,
