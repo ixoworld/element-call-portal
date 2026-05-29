@@ -47,6 +47,15 @@ export class Publisher {
    */
   public shouldPublish = false;
 
+  // True while our own mute handler (`observeMuteStates`) is applying a desired
+  // mic/camera state. `onLocalTrackPublished` fires *during* that apply, before
+  // the MuteState observable has committed the new value, so re-reading
+  // `enabled$.value` there is stale and re-mutes the track we are unmuting
+  // (the "first unmute does nothing / mic icon lies" bug). While the handler is
+  // in flight it already applies the correct state, so the re-apply is skipped.
+  private audioMuteHandlerInFlight = false;
+  private videoMuteHandlerInFlight = false;
+
   private readonly scope = new ObservableScope();
 
   /**
@@ -118,21 +127,25 @@ export class Publisher {
     }
     // also check the mute state and apply it
     if (localTrackPublication.source === Track.Source.Microphone) {
-      const enabled = this.muteStates.audio.enabled$.value;
-      lkRoom.localParticipant.setMicrophoneEnabled(enabled).catch((e) => {
-        this.logger.error(
-          `Failed to enable microphone track, enabled:${enabled}`,
-          e,
-        );
-      });
+      if (!this.audioMuteHandlerInFlight) {
+        const enabled = this.muteStates.audio.enabled$.value;
+        lkRoom.localParticipant.setMicrophoneEnabled(enabled).catch((e) => {
+          this.logger.error(
+            `Failed to enable microphone track, enabled:${enabled}`,
+            e,
+          );
+        });
+      }
     } else if (localTrackPublication.source === Track.Source.Camera) {
-      const enabled = this.muteStates.video.enabled$.value;
-      lkRoom.localParticipant.setCameraEnabled(enabled).catch((e) => {
-        this.logger.error(
-          `Failed to enable camera track, enabled:${enabled}`,
-          e,
-        );
-      });
+      if (!this.videoMuteHandlerInFlight) {
+        const enabled = this.muteStates.video.enabled$.value;
+        lkRoom.localParticipant.setCameraEnabled(enabled).catch((e) => {
+          this.logger.error(
+            `Failed to enable camera track, enabled:${enabled}`,
+            e,
+          );
+        });
+      }
     }
   }
   /**
@@ -369,6 +382,7 @@ export class Publisher {
   private observeMuteStates(): void {
     const lkRoom = this.connection.livekitRoom;
     this.muteStates.audio.setHandler(async (enable) => {
+      this.audioMuteHandlerInFlight = true;
       try {
         this.logger.debug(
           `handler: Setting LiveKit microphone enabled: ${enable}`,
@@ -383,9 +397,12 @@ export class Publisher {
       } catch (e) {
         this.logger.error("Failed to update LiveKit audio input mute state", e);
         return lkRoom.localParticipant.isMicrophoneEnabled;
+      } finally {
+        this.audioMuteHandlerInFlight = false;
       }
     });
     this.muteStates.video.setHandler(async (enable) => {
+      this.videoMuteHandlerInFlight = true;
       try {
         this.logger.debug(`handler: Setting LiveKit camera enabled: ${enable}`);
         await lkRoom.localParticipant.setCameraEnabled(enable);
@@ -398,6 +415,8 @@ export class Publisher {
       } catch (e) {
         this.logger.error("Failed to update LiveKit video input mute state", e);
         return lkRoom.localParticipant.isCameraEnabled;
+      } finally {
+        this.videoMuteHandlerInFlight = false;
       }
     });
   }
