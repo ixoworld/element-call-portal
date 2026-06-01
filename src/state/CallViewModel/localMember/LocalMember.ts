@@ -724,9 +724,13 @@ export const createLocalMembership$ = ({
         // "motion" for SVC codecs (VP9/AV1), so this hint would be lost there.
         contentHint: "detail",
       };
-      // Screen-share-only publish overrides. Codec stays VP8 (inherits from
-      // publishDefaults) so contentHint=detail actually takes effect.
+      // Screen-share-only publish overrides.
       const screensharePublishOptions: TrackPublishOptions = {
+        // Pin VP8 for screen share. publishDefaults uses VP9 for the camera,
+        // but VP9 is SVC and LiveKit forces contentHint to "motion" for SVC
+        // codecs — which would defeat the "detail" hint above. VP8 (non-SVC)
+        // keeps the text/UI optimization working.
+        videoCodec: "vp8",
         // Prefer dropping framerate over resolution under pressure — text
         // stays readable even when bandwidth/CPU dips.
         degradationPreference: "maintain-resolution",

@@ -393,4 +393,53 @@ describe("Bug fix", () => {
     }
     await publisher.destroy();
   });
+
+  // IXO-2384: joining muted then clicking unmute once did nothing — the icon
+  // flipped to unmuted but the track stayed muted (needed a second click).
+  // The mute handler unmutes the track, which publishes it and fires
+  // LocalTrackPublished *during* the handler, before MuteState commits the new
+  // value. onLocalTrackPublished then re-read the stale `enabled$.value`
+  // (still muted) and re-muted the track it had just unmuted. The fix re-applies
+  // the value the handler is currently applying instead of the stale one.
+  it("first unmute after joining muted does not re-mute the track", async () => {
+    const publisher = new Publisher(
+      connection,
+      mockMediaDevices({}),
+      muteStates,
+      constant({ supported: false, processor: undefined }),
+      logger,
+    );
+
+    // Join muted: audio stays disabled, so no mic track is created yet.
+    await publisher.createAndSetupTracks();
+    void publisher.startPublishing();
+    await flushPromises();
+
+    // The handler observeMuteStates() registered with the mute state. Driving it
+    // directly lets us reproduce the real race: the handler applies `true` while
+    // `enabled$.value` is still the stale `false` (the real MuteState only
+    // commits after the handler resolves).
+    const audioHandler = vi.mocked(
+      muteStates.audio.setHandler as unknown as (
+        h: (enabled: boolean) => Promise<boolean>,
+      ) => void,
+    ).mock.calls[0][0];
+    expect(audioEnabled$.value).toBe(false);
+
+    await audioHandler(true);
+    await flushPromises();
+
+    const track = localParticipant.getTrackPublication(
+      Track.Source.Microphone,
+    )?.track;
+    expect(track).toBeDefined();
+    // The track that was just unmuted must not have been re-muted by the
+    // stale-value re-apply in onLocalTrackPublished. With the bug, that re-apply
+    // read the stale muted value and called setMicrophoneEnabled(false), muting
+    // the freshly-published track.
+    expect(track!.mute).not.toHaveBeenCalled();
+    expect(track!.isMuted).toBe(false);
+
+    await publisher.destroy();
+  });
 });

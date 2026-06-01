@@ -16,7 +16,12 @@ import {
 } from "livekit-client";
 
 const defaultLiveKitPublishOptions: TrackPublishDefaults = {
-  audioPreset: AudioPresets.music,
+  // Voice-optimized Opus at 24kbps instead of the 48kbps "music" preset. The
+  // music preset faithfully reproduces background noise (typing, fans); the
+  // speech preset is tuned for voice and audibly reduces how crisply that
+  // noise comes through. Native browser noise suppression / echo cancellation /
+  // AGC stay enabled (set per-capture in ConnectionFactory, defaulting to on).
+  audioPreset: AudioPresets.speech,
   dtx: true,
   // disable red because the livekit server strips out red packets for clients
   // that don't support it (firefox) but of course that doesn't work with e2ee.
@@ -34,9 +39,18 @@ const defaultLiveKitPublishOptions: TrackPublishDefaults = {
     ScreenSharePresets.h720fps5,
   ] as VideoPreset[],
   stopMicTrackOnMute: false,
-  videoCodec: "vp8",
+  // VP9 (SVC L3T3) for camera: better quality per bit than VP8 and degrades
+  // more smoothly (temporal layers drop frames instead of hard simulcast layer
+  // switches), usually at lower publisher CPU than 3x VP8 simulcast. The VP8
+  // backup keeps incompatible subscribers (e.g. older Safari) working.
+  // NOTE: screen share deliberately stays on VP8 — see LocalMember.ts, where
+  // it pins videoCodec back to "vp8" so contentHint:"detail" still applies.
+  videoCodec: "vp9",
   videoEncoding: VideoPresets.h720.encoding,
   backupCodec: { codec: "vp8", encoding: VideoPresets.h720.encoding },
+  // Prefer dropping framerate over resolution under bandwidth/CPU pressure —
+  // keeps faces/detail sharp rather than going soft to hold 30fps.
+  degradationPreference: "maintain-resolution",
 } as const;
 
 export const defaultLiveKitOptions: RoomOptions = {
@@ -48,7 +62,9 @@ export const defaultLiveKitOptions: RoomOptions = {
 
   // capture settings
   videoCaptureDefaults: {
-    resolution: VideoPresets.h720.resolution,
+    // 720p captured at 24fps: with maintain-resolution this spends bits on
+    // sharpness instead of holding 30fps, and eases encoder load.
+    resolution: { ...VideoPresets.h720.resolution, frameRate: 24 },
   },
 
   // publish settings
