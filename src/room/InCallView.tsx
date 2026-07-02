@@ -44,6 +44,7 @@ import {
   createCallViewModel$,
 } from "../state/CallViewModel/CallViewModel.ts";
 import { Grid, type TileProps } from "../grid/Grid";
+import { CallQualityStatsReporter } from "../analytics/CallQualityStatsReporter";
 import { useInitial } from "../useInitial";
 import { SpotlightTile } from "../tile/SpotlightTile";
 import { type EncryptionSystem } from "../e2ee/sharedKeyManagement";
@@ -268,6 +269,36 @@ export const InCallView: FC<InCallViewProps> = ({
 
   const ringing = useBehavior(vm.ringing$);
   const audioParticipants = useBehavior(vm.livekitRoomItems$);
+
+  // Sample per-participant WebRTC quality (packet loss, jitter, RTT, freezes,
+  // send-side limitation, TURN usage) and report an aggregated summary to
+  // PostHog. Aggregated per flush window + a final end-of-call summary — never
+  // per raw stats sample — to keep event volume and cost low. No-ops unless the
+  // user has consented to analytics.
+  //
+  // We source rooms from allConnections$ (not livekitRoomItems$, which omits the
+  // local participant) so send-side stats and the SFU host are captured even on
+  // a solo call with no remote peers.
+  const callConnections = useBehavior(vm.allConnections$);
+  const qualityReporter = useRef<CallQualityStatsReporter | null>(null);
+  useEffect(() => {
+    const reporter = new CallQualityStatsReporter(matrixRoom.roomId);
+    qualityReporter.current = reporter;
+    reporter.start();
+    return (): void => {
+      reporter.stop();
+      qualityReporter.current = null;
+    };
+  }, [matrixRoom.roomId]);
+  useEffect(() => {
+    qualityReporter.current?.setRooms(
+      callConnections.getConnections().map((c) => ({
+        livekitRoom: c.livekitRoom,
+        url: c.transport.livekit_service_url,
+      })),
+    );
+  }, [callConnections]);
+
   const participantCount = useBehavior(vm.participantCount$);
   const reconnecting = useBehavior(vm.reconnecting$);
   const layout = useBehavior(vm.layout$);

@@ -324,3 +324,73 @@ export class CallReconnectingTracker {
     });
   }
 }
+
+/**
+ * Aggregated per-participant WebRTC quality metrics for a single flush window
+ * (or the whole call when `isFinal` is true). This is emitted periodically
+ * rather than per stats sample to keep event volume — and cost — low. It is
+ * produced by {@link ../CallQualityStatsReporter.CallQualityStatsReporter}.
+ */
+export interface CallQualityStatsPayload {
+  // the callId posthog key is essentially a Matrix roomId
+  callId: string;
+  /** True for the single end-of-call summary; false for periodic windows. */
+  isFinal: boolean;
+  /** Wall-clock length of the aggregation window in seconds. */
+  sampleWindowSeconds: number;
+  /** Number of stats polls folded into this window. */
+  sampleCount: number;
+  numRemoteParticipants: number;
+  numSfuHosts: number;
+  /** Comma-separated SFU hostnames seen in this window. */
+  sfuHosts: string;
+  /** Worst LiveKit connection quality observed ("poor"/"lost" => trouble). */
+  connectionQualityWorst: string;
+  /** Percentage of samples where quality was poor or lost. */
+  connectionQualityPoorPct: number;
+
+  // Receive path (this client's downlink), aggregated over remote tracks.
+  recvBitrateKbps: number;
+  recvPacketLossPct: number;
+  recvPacketLossPctMax: number;
+  recvJitterMs: number;
+  recvJitterMsMax: number;
+  recvFps: number;
+  recvFreezeCount: number;
+  recvFreezeMs: number;
+
+  // Send path (this client's uplink), aggregated over local tracks.
+  sendBitrateKbps: number;
+  sendPacketLossPct: number;
+  sendPacketLossPctMax: number;
+  sendFps: number;
+  sendResolution: string;
+  /** Percentage of send-limited time attributed to local CPU. */
+  sendLimitedByCpuPct: number;
+  /** Percentage of send-limited time attributed to available bandwidth. */
+  sendLimitedByBandwidthPct: number;
+
+  // Transport.
+  rttMs: number;
+  rttMsMax: number;
+  /** Percentage of samples routed through a TURN relay. */
+  usesTurnRelayPct: number;
+}
+
+interface CallQualityStats extends IPosthogEvent, CallQualityStatsPayload {
+  eventName: "CallQualityStats";
+}
+
+export class CallQualityStatsTracker {
+  public track(payload: CallQualityStatsPayload): void {
+    PosthogAnalytics.instance.trackEvent<CallQualityStats>(
+      {
+        eventName: "CallQualityStats",
+        ...payload,
+      },
+      // The final, end-of-call summary is sent instantly so it isn't lost to
+      // request batching when the widget iframe is torn down on hangup.
+      { send_instantly: payload.isFinal },
+    );
+  }
+}
