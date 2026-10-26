@@ -6,14 +6,22 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, NEVER, Subject } from "rxjs";
 import { logger } from "matrix-js-sdk/lib/logger";
 
+import {
+  type DeviceMuteRequest,
+  type DeviceMuteState,
+  type HostBridge,
+  type HostRequest,
+  nullHostBridge,
+} from "../HostBridge";
 import { MuteStates, MuteState } from "./MuteStates";
 import {
   type AudioOutputDeviceLabel,
   type DeviceLabel,
   type MediaDevice,
+  type SelectedAudioInputDevice,
   type SelectedAudioOutputDevice,
   type SelectedDevice,
 } from "./MediaDevices";
@@ -92,6 +100,75 @@ describe("MuteState", () => {
     await flushPromises();
     expect(lastEnabled).toBe(true);
   });
+
+  test("should ignore toggle while syncing but still process set requests", async () => {
+    const deviceStub = {
+      available$: constant(
+        new Map<string, DeviceLabel>([
+          ["mic", { type: "name", name: "Microphone" }],
+        ]),
+      ),
+      selected$: constant({ id: "mic" }),
+      select(): void {},
+    } as unknown as MediaDevice<DeviceLabel, SelectedDevice>;
+
+    const muteState = new MuteState(
+      testScope,
+      deviceStub,
+      false,
+      constant(false),
+    );
+
+    const first = Promise.withResolvers<boolean>();
+    const second = Promise.withResolvers<boolean>();
+    const handler = vi
+      .fn<(desired: boolean) => Promise<boolean>>()
+      .mockImplementationOnce(async () => first.promise)
+      .mockImplementationOnce(async () => second.promise);
+    muteState.setHandler(handler);
+
+    const syncingValues: boolean[] = [];
+    muteState.syncing$.subscribe((syncing) => {
+      syncingValues.push(syncing);
+    });
+
+    let setEnabled: ((enabled: boolean) => void) | null = null;
+    muteState.setEnabled$.subscribe((setter) => {
+      setEnabled = setter;
+    });
+    let toggle: (() => void) | null = null;
+    muteState.toggle$.subscribe((toggleFn) => {
+      toggle = toggleFn;
+    });
+
+    await flushPromises();
+
+    // Start syncing by requesting unmute.
+    toggle!();
+    await flushPromises();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenNthCalledWith(1, true);
+
+    // Toggle requests are ignored while syncing.
+    toggle!();
+    await flushPromises();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // setEnabled still updates latest desired state while syncing (push-to-talk).
+    setEnabled!(false);
+    await flushPromises();
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    first.resolve(true);
+    await flushPromises();
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenNthCalledWith(2, false);
+
+    second.resolve(false);
+    await flushPromises();
+    expect(syncingValues).toContain(true);
+    expect(syncingValues.at(-1)).toBe(false);
+  });
 });
 
 describe("MuteStates", () => {
@@ -151,6 +228,80 @@ describe("MuteStates", () => {
     };
   }
 
+  function aAudioInput(): MediaDevice<DeviceLabel, SelectedAudioInputDevice> {
+    return {
+      available$: constant(
+        new Map<string, DeviceLabel>([
+          ["mic0", { type: "name", name: "Built-in Microphone" }],
+        ]),
+      ),
+      selected$: constant({ id: "mic0", hardwareDeviceChange$: NEVER }),
+      select(): void {},
+    };
+  }
+
+  test("keeps the host informed and applies its mute requests", async () => {
+    const deviceMute$ = new Subject<
+      HostRequest<DeviceMuteRequest, DeviceMuteState>
+    >();
+    const notifyDeviceMute = vi.fn(async (): Promise<void> => {});
+    const hostBridge: HostBridge = {
+      ...nullHostBridge,
+      notifyDeviceMute,
+      deviceMute$,
+    };
+    const muteStates = new MuteStates(
+      testScope,
+      mockMediaDevices({
+        audioInput: aAudioInput(),
+        videoInput: aVideoInput(),
+      }),
+      { audioEnabled: true, videoEnabled: false },
+      hostBridge,
+    );
+    await flushPromises();
+
+    // The host hears the state we started in
+    expect(notifyDeviceMute).toHaveBeenLastCalledWith({
+      audio_enabled: true,
+      video_enabled: false,
+    });
+
+    // The host asks for the camera on, saying nothing about the microphone,
+    // which is left as it is
+    const reply = vi.fn();
+    deviceMute$.next({ data: { video_enabled: true }, reply });
+    await flushPromises();
+    expect(reply).toHaveBeenCalledExactlyOnceWith({
+      audio_enabled: true,
+      video_enabled: true,
+    });
+    expect(muteStates.audio.enabled$.value).toBe(true);
+    expect(muteStates.video.enabled$.value).toBe(true);
+    expect(notifyDeviceMute).toHaveBeenLastCalledWith({
+      audio_enabled: true,
+      video_enabled: true,
+    });
+
+    // Then for everything off
+    const replyAgain = vi.fn();
+    deviceMute$.next({
+      data: { audio_enabled: false, video_enabled: false },
+      reply: replyAgain,
+    });
+    await flushPromises();
+    expect(replyAgain).toHaveBeenCalledExactlyOnceWith({
+      audio_enabled: false,
+      video_enabled: false,
+    });
+    expect(muteStates.audio.enabled$.value).toBe(false);
+    expect(muteStates.video.enabled$.value).toBe(false);
+    expect(notifyDeviceMute).toHaveBeenLastCalledWith({
+      audio_enabled: false,
+      video_enabled: false,
+    });
+  });
+
   test("should mute camera when in earpiece mode", async () => {
     const audioOutputDevice = aAudioOutputDevices();
 
@@ -159,10 +310,12 @@ describe("MuteStates", () => {
       videoInput: aVideoInput(),
       // other devices are not relevant for this test
     });
-    const muteStates = new MuteStates(testScope, mediaDevices, {
-      audioEnabled: false,
-      videoEnabled: false,
-    });
+    const muteStates = new MuteStates(
+      testScope,
+      mediaDevices,
+      { audioEnabled: false, videoEnabled: false },
+      nullHostBridge,
+    );
 
     let latestSyncedState: boolean | null = null;
     muteStates.video.setHandler(async (enabled: boolean): Promise<boolean> => {

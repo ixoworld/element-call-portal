@@ -16,7 +16,7 @@
 The following [MSCs](https://github.com/matrix-org/matrix-spec-proposals) are
 required for Element Call to work properly:
 
-- **[MSC3266](https://github.com/deepbluev7/matrix-doc/blob/room-summaries/proposals/3266-room-summary.md):
+- **[MSC3266](https://github.com/deepbluev7/matrix-doc/blob/room-summaries/proposals/3266-room-summary.md)
   Room Summary API**: In Standalone mode Element Call is able to join rooms
   over federation using knocking. In this context MSC3266 is required as it
   allows to request a room summary of rooms you are not joined. The summary
@@ -29,19 +29,26 @@ required for Element Call to work properly:
   signalling. If disabled it is very likely that you end up with stuck calls in
   Matrix rooms.
 
+- **[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/blob/travis/msc/voip-transports-registry/proposals/4519-rtc-transports-registry.md)
+  MatrixRTC Transports Registry**: Defines an endpoint that clients can use to
+  query the available MatrixRTC transports (i.e. find your LiveKit SFU).
+
 - **[MSC4222](https://github.com/matrix-org/matrix-spec-proposals/blob/erikj/sync_v2_state_after/proposals/4222-sync-v2-state-after.md)
   Adding `state_after` to sync v2**: Allow clients to opt-in to a change of the
   sync v2 API that allows them to correctly track the state of the room. This is
   required by Element Call to track room state reliably.
 
 If you're using [Synapse](https://github.com/element-hq/synapse/) as your
-homeserver, you'll need to additionally add the following config items to
-`homeserver.yaml` to comply with Element Call:
+homeserver, you can configure these features by adding the following entries to
+`homeserver.yaml`:
 
 ```yaml
 experimental_features:
   # MSC3266: Room summary API. Used for knocking over federation
   msc3266_enabled: true
+  # MSC4143: MatrixRTC. For historical reasons this flag enables the transports
+  # endpoint defined in MSC4519.
+  msc4143_enabled: true
   # MSC4222 needed for syncv2 state_after. This allow clients to
   # correctly track the state of the room.
   msc4222_enabled: true
@@ -61,6 +68,15 @@ rc_delayed_event_mgmt:
   # Currently the heart-beat is every 5 seconds which translates into a rate of 0.2Hz
   per_second: 1
   burst_count: 20
+
+matrix_rtc:
+  transports:
+    # The transport you specify will be made available to clients over the
+    # /_matrix/client/unstable/org.matrix.msc4143/rtc/transports endpoint as
+    # defined in MSC4519.
+    - type: livekit
+      # Replace this with the actual URL of your MatrixRTC Authorization Service
+      livekit_service_url: https://matrix-rtc.example.com/livekit/jwt
 ```
 
 As a prerequisite for the
@@ -68,10 +84,10 @@ As a prerequisite for the
 make sure that your Synapse server has either a `federation` or `openid`
 [listener configured](https://element-hq.github.io/synapse/latest/usage/configuration/config_documentation.html#listeners).
 
-### MatrixRTC Backend
+### LiveKit backend
 
-In order to **guarantee smooth operation** of Element Call, a MatrixRTC backend is
-required for each site deployment.
+In order to **guarantee smooth operation** of Element Call, a dedicated LiveKit
+backend is required for each site deployment.
 
 ![MSC4195 compatible setup](MSC4195_setup.drawio.png)
 
@@ -86,10 +102,11 @@ to implement
 In the context of MatrixRTC, we suggest using a single hostname for backend
 communication by implementing endpoint routing within a reverse proxy setup. For
 the example above, this results in:
-| Service | Endpoint | Example |
-| -------- | ------- | ------- |
+
+| Service                                                                           | Endpoint       | Example                              |
+| --------------------------------------------------------------------------------- | -------------- | ------------------------------------ |
 | [Livekit SFU](https://github.com/livekit/livekit) WebSocket signalling connection | `/livekit/sfu` | `matrix-rtc.example.com/livekit/sfu` |
-| [MatrixRTC Authorization Service](https://github.com/element-hq/lk-jwt-service) | `/livekit/jwt` | `matrix-rtc.example.com/livekit/jwt` |
+| [MatrixRTC Authorization Service](https://github.com/element-hq/lk-jwt-service)   | `/livekit/jwt` | `matrix-rtc.example.com/livekit/jwt` |
 
 Using Nginx, you can achieve this by:
 
@@ -164,7 +181,7 @@ Using Haproxy, you can achieve this by:
     use_backend mxrtc_auth_backend if is_mxrtc_auth matrixrtc_domain
 
 # Backend
-## MatrixRTC backend
+## LiveKit backend
 backend sfu_backend
     server livekit 127.0.0.1:7880
     http-request set-path %[path,regsub(^/livekit/sfu/,/)]
@@ -185,44 +202,6 @@ backend mxrtc_auth_backend
     option http-buffer-request
 
 ```
-
-#### MatrixRTC backend announcement
-
-> [!IMPORTANT]
-> As defined in
-> [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143),
-> the MatrixRTC backend(s) must be announced to the client via your **Matrix site's
-> `.well-known/matrix/client`** file (e.g.
-> `example.com/.well-known/matrix/client` matching the site deployment example
-> from above). The configuration is a list of Foci configs:
-
-```json
-"org.matrix.msc4143.rtc_foci": [
-    {
-        "type": "livekit",
-        "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
-    },
-    {
-        "type": "livekit",
-        "livekit_service_url": "https://matrix-rtc-2.example.com/livekit/jwt"
-    }
-]
-```
-
-Make sure this file is served with the correct MIME type (`application/json`).
-Additionally, ensure the appropriate CORS headers are set to allow web clients
-to access it across origins. For more details, refer to the
-[Matrix Client-Server API: 2. Web Browser Clients](https://spec.matrix.org/latest/client-server-api/#web-browser-clients).
-
-```
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
-Access-Control-Allow-Headers: X-Requested-With, Content-Type, Authorization
-```
-
-> [!NOTE]  
-> Most `org.matrix.msc4143.rtc_foci` configurations will only have one entry in
-> the array.
 
 ## Building Element Call
 
@@ -277,7 +256,7 @@ runtime. Documentation and default values for `public/config.json` can be found
 in [ConfigOptions.ts](../src/config/ConfigOptions.ts).
 
 > [!CAUTION]
-> Please note configuring MatrixRTC backend via `config.json` of
+> Please note configuring LiveKit backend via `config.json` of
 > Element Call is only available for developing and debug purposes. Relying on
 > it might break Element Call going forward!
 

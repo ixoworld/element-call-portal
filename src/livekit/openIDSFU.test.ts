@@ -15,6 +15,7 @@ import {
   vitest,
 } from "vitest";
 import fetchMock from "fetch-mock";
+import { MatrixError } from "matrix-js-sdk";
 
 import { getSFUConfigWithOpenID, type OpenIDClientParts } from "./openIDSFU";
 import { testJWTToken } from "../utils/test-fixtures";
@@ -63,7 +64,10 @@ describe("getSFUConfigWithOpenID", () => {
     fetchMock.post("https://sfu.example.org/sfu/get", () => {
       return {
         status: 500,
-        body: { error: "Test failure" },
+        body: {
+          errcode: "M_LOOKUP_FAILED",
+          error: "Failed to look up user info from homeserver",
+        },
       };
     });
     try {
@@ -75,9 +79,12 @@ describe("getSFUConfigWithOpenID", () => {
       );
     } catch (ex: unknown) {
       expect(ex).toBeInstanceOf(FailToGetOpenIdToken);
-      expect((ex as FailToGetOpenIdToken).cause).toEqual(
-        new Error("SFU Config fetch failed with status code 500"),
+      expect((ex as FailToGetOpenIdToken).cause).toBeInstanceOf(MatrixError);
+      const mxError = (ex as Error).cause as MatrixError;
+      expect(mxError.message).toEqual(
+        "MatrixError: [500] Failed to look up user info from homeserver",
       );
+
       void (await fetchMock.flush());
       return;
     }
@@ -141,7 +148,7 @@ describe("getSFUConfigWithOpenID", () => {
         // Verify, that the request contains the expected delay parameters
         if (
           body.delay_id === "mock_delay_id" &&
-          body.delay_timeout === 10000 &&
+          body.delay_timeout === 3600000 &&
           body.delay_cs_api_url === "https://homeserverserver.org/cs_api"
         ) {
           return {
@@ -181,13 +188,19 @@ describe("getSFUConfigWithOpenID", () => {
     fetchMock.post("https://sfu.example.org/get_token", () => {
       return {
         status: 500,
-        body: { error: "Test failure" },
+        body: {
+          errcode: "M_LOOKUP_FAILED",
+          error: "Failed to look up user info from homeserver",
+        },
       };
     });
     fetchMock.post("https://sfu.example.org/sfu/get", () => {
       return {
         status: 500,
-        body: { error: "Test failure" },
+        body: {
+          errcode: "M_LOOKUP_FAILED",
+          error: "Failed to look up user info from homeserver",
+        },
       };
     });
     try {
@@ -203,8 +216,10 @@ describe("getSFUConfigWithOpenID", () => {
       );
     } catch (ex) {
       expect(ex).toBeInstanceOf(FailToGetOpenIdToken);
-      expect((ex as FailToGetOpenIdToken).cause).toEqual(
-        new Error("SFU Config fetch failed with status code 500"),
+      expect((ex as FailToGetOpenIdToken).cause).toBeInstanceOf(MatrixError);
+      const mxError = (ex as Error).cause as MatrixError;
+      expect(mxError.message).toEqual(
+        "MatrixError: [500] Failed to look up user info from homeserver",
       );
       void (await fetchMock.flush());
     }
@@ -214,7 +229,7 @@ describe("getSFUConfigWithOpenID", () => {
     expect(calls[0][0]).toStrictEqual("https://sfu.example.org/get_token");
     expect(calls[0][1]).toStrictEqual({
       // check if it uses correct delayID!
-      body: '{"room_id":"!example_room_id","slot_id":"m.call#ROOM","member":{"id":"@alice:example.org:DEVICE","claimed_user_id":"@alice:example.org","claimed_device_id":"DEVICE"},"delay_id":"mock_delay_id","delay_timeout":10000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
+      body: '{"room_id":"!example_room_id","slot_id":"m.call#ROOM","member":{"id":"@alice:example.org:DEVICE","claimed_user_id":"@alice:example.org","claimed_device_id":"DEVICE"},"delay_id":"mock_delay_id","delay_timeout":3600000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -224,7 +239,7 @@ describe("getSFUConfigWithOpenID", () => {
     expect(calls[1][0]).toStrictEqual("https://sfu.example.org/sfu/get");
 
     expect(calls[1][1]).toStrictEqual({
-      body: '{"room":"!example_room_id","device_id":"DEVICE","delay_id":"mock_delay_id","delay_timeout":10000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
+      body: '{"room":"!example_room_id","device_id":"DEVICE","delay_id":"mock_delay_id","delay_timeout":3600000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
       headers: {
         "Content-Type": "application/json",
       },
@@ -269,7 +284,7 @@ describe("getSFUConfigWithOpenID", () => {
     expect(calls[0][0]).toStrictEqual("https://sfu.example.org/get_token");
     expect(calls[0][1]).toStrictEqual({
       // check if it uses correct delayID!
-      body: '{"room_id":"!example_room_id","slot_id":"m.call#ROOM","member":{"id":"@alice:example.org:DEVICE","claimed_user_id":"@alice:example.org","claimed_device_id":"DEVICE"},"delay_id":"mock_delay_id","delay_timeout":10000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
+      body: '{"room_id":"!example_room_id","slot_id":"m.call#ROOM","member":{"id":"@alice:example.org:DEVICE","claimed_user_id":"@alice:example.org","claimed_device_id":"DEVICE"},"delay_id":"mock_delay_id","delay_timeout":3600000,"delay_cs_api_url":"https://matrix.homeserverserver.org"}',
       method: "POST",
       headers: {
         "Content-Type": "application/json",

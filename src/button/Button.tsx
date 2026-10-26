@@ -16,6 +16,7 @@ import {
 import {
   MicOnSolidIcon,
   MicOffSolidIcon,
+  SpinnerIcon,
   VideoCallSolidIcon,
   VideoCallOffSolidIcon,
   EndCallIcon,
@@ -32,12 +33,13 @@ import { platform } from "../Platform";
 
 interface MicButtonProps extends ComponentPropsWithoutRef<"button"> {
   enabled: boolean;
+  busy?: boolean;
   size?: "md" | "lg";
 }
 
-export const MicButton: FC<MicButtonProps> = ({ enabled, ...props }) => {
+export const MicButton: FC<MicButtonProps> = ({ enabled, busy, ...props }) => {
   const { t } = useTranslation();
-  const Icon = enabled ? MicOnSolidIcon : MicOffSolidIcon;
+  const Icon = busy ? SpinnerIcon : enabled ? MicOnSolidIcon : MicOffSolidIcon;
   const label = enabled
     ? t("mute_microphone_button_label")
     : t("unmute_microphone_button_label");
@@ -51,6 +53,11 @@ export const MicButton: FC<MicButtonProps> = ({ enabled, ...props }) => {
         role="switch"
         aria-checked={enabled}
         {...props}
+        aria-busy={busy}
+        className={classNames(props.className, {
+          [styles.rotate]: !!busy,
+        })}
+        disabled={props.disabled || busy}
       />
     </Tooltip>
   );
@@ -58,12 +65,21 @@ export const MicButton: FC<MicButtonProps> = ({ enabled, ...props }) => {
 
 interface VideoButtonProps extends ComponentPropsWithoutRef<"button"> {
   enabled: boolean;
+  busy?: boolean;
   size?: "md" | "lg";
 }
 
-export const VideoButton: FC<VideoButtonProps> = ({ enabled, ...props }) => {
+export const VideoButton: FC<VideoButtonProps> = ({
+  enabled,
+  busy,
+  ...props
+}) => {
   const { t } = useTranslation();
-  const Icon = enabled ? VideoCallSolidIcon : VideoCallOffSolidIcon;
+  const Icon = busy
+    ? SpinnerIcon
+    : enabled
+      ? VideoCallSolidIcon
+      : VideoCallOffSolidIcon;
   const label = enabled
     ? t("stop_video_button_label")
     : t("start_video_button_label");
@@ -77,6 +93,11 @@ export const VideoButton: FC<VideoButtonProps> = ({ enabled, ...props }) => {
         role="switch"
         aria-checked={enabled}
         {...props}
+        aria-busy={busy}
+        className={classNames(props.className, {
+          [styles.rotate]: !!busy,
+        })}
+        disabled={props.disabled || busy}
       />
     </Tooltip>
   );
@@ -114,21 +135,12 @@ interface EndCallButtonProps extends ComponentPropsWithoutRef<"button"> {
   size?: "md" | "lg";
 }
 
-export const EndCallButton: FC<EndCallButtonProps> = ({
-  className,
-  ...props
-}) => {
+export const EndCallButton: FC<EndCallButtonProps> = (props) => {
   const { t } = useTranslation();
 
   return (
     <Tooltip label={t("hangup_button_label")}>
-      <CpdButton
-        className={classNames(className, styles.endCall)}
-        iconOnly
-        Icon={EndCallIcon}
-        destructive
-        {...props}
-      />
+      <CpdButton iconOnly Icon={EndCallIcon} destructive {...props} />
     </Tooltip>
   );
 };
@@ -152,7 +164,7 @@ export const LoudspeakerButton: FC<LoudspeakerButtonProps> = ({
         iconOnly
         Icon={loudspeakerModeEnabled ? VolumeOnSolidIcon : VolumeOffSolidIcon}
         {...props}
-        kind={loudspeakerModeEnabled ? "primary" : "secondary"}
+        kind={loudspeakerModeEnabled ? "secondary" : "primary"}
         aria-checked={loudspeakerModeEnabled}
       />
     </Tooltip>

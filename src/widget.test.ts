@@ -9,7 +9,7 @@ import { describe, expect, vi, it, beforeEach } from "vitest";
 import { createRoomWidgetClient, EventType } from "matrix-js-sdk";
 
 import { getUrlParams } from "./UrlParams";
-import { initializeWidget, widget } from "./widget";
+import { initializeWidget } from "./widget";
 import { Config } from "./config/Config";
 import { ElementCallReactionEventType } from "./reactions";
 
@@ -19,6 +19,7 @@ const createRoomWidgetClientSpy = vi.mocked(createRoomWidgetClient);
 vi.mock("./config/Config", () => ({
   Config: {
     init: vi.fn().mockImplementation(async () => Promise.resolve()),
+    get: vi.fn().mockReturnValue({}),
   },
 }));
 const configInitSpy = vi.mocked(Config.init);
@@ -41,7 +42,7 @@ beforeEach(() => {
 
 describe("widget", () => {
   it("should create an embedded client with the correct params", () => {
-    initializeWidget("ANYRTCAPP");
+    const widget = initializeWidget("ANYRTCAPP");
 
     expect(getUrlParams()).toStrictEqual({
       widgetId: "id",
@@ -109,6 +110,7 @@ describe("widget", () => {
       sendToDevice: sendRecvToDevice,
       receiveToDevice: sendRecvToDevice,
       turnServers: false,
+      rtcTransports: true,
       sendDelayedEvents: true,
       updateDelayedEvents: true,
       sendSticky: true,

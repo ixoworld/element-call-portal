@@ -8,13 +8,13 @@ Please see LICENSE in the repository root for full details.
 import { getTrackReferenceId } from "@livekit/components-core";
 import { type Room as LivekitRoom } from "livekit-client";
 import { type RemoteAudioTrack, Track } from "livekit-client";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   useTracks,
   AudioTrack,
   type AudioTrackProps,
 } from "@livekit/components-react";
-import { logger } from "matrix-js-sdk/lib/logger";
+import { logger as rootLogger } from "matrix-js-sdk/lib/logger";
 
 import { useEarpieceAudioConfig } from "../MediaDevicesContext";
 import { useReactiveState } from "../useReactiveState";
@@ -40,7 +40,6 @@ export interface MatrixAudioRendererProps {
   muted?: boolean;
 }
 
-const prefixedLogger = logger.getChild("[MatrixAudioRenderer]");
 /**
  * Takes care of handling remote participants’ audio tracks and makes sure that microphones and screen share are audible.
  *
@@ -60,6 +59,10 @@ export function LivekitRoomAudioRenderer({
   validIdentities,
   muted,
 }: MatrixAudioRendererProps): ReactNode {
+  const logger = rootLogger.getChild("[MatrixAudioRenderer]");
+  // Identities we have already warned about, so that re-renders (which happen
+  // on every active speaker update) don't repeat the warning.
+  const warnedIdentities = useRef(new Set<string>());
   const tracks = useTracks(
     [
       Track.Source.Microphone,
@@ -72,22 +75,27 @@ export function LivekitRoomAudioRenderer({
       room: livekitRoom,
     },
   )
-    // Only keep audio tracks
-    .filter((ref) => ref.publication.kind === Track.Kind.Audio)
+    // Only keep remote audio tracks (we never render our own audio)
+    .filter(
+      (ref) =>
+        ref.publication.kind === Track.Kind.Audio && !ref.participant.isLocal,
+    )
     // Only keep tracks from participants that are in the validIdentities list
     .filter((ref) => {
-      const isValid = validIdentities.includes(ref.participant.identity);
-      if (!isValid) {
-        // TODO make sure to also skip the warn logging for the local identity
+      const { identity } = ref.participant;
+      const isValid = validIdentities.includes(identity);
+      if (!isValid && !warnedIdentities.current.has(identity)) {
+        warnedIdentities.current.add(identity);
         // Log that there is an invalid identity, that means that someone is publishing audio that is not expected to be in the call.
-        prefixedLogger.warn(
-          `Audio track ${ref.participant.identity} from ${url} has no matching matrix call member`,
+        logger.warn(
+          `Audio track ${identity} from ${url} has no matching matrix call member`,
           `current members: ${validIdentities.join()}`,
           `track will not get rendered`,
         );
-        return false;
+      } else if (isValid) {
+        warnedIdentities.current.delete(identity);
       }
-      return true;
+      return isValid;
     });
 
   // This component is also (in addition to the "only play audio for connected members" logic above)

@@ -7,10 +7,10 @@ Please see LICENSE in the repository root for full details.
 
 import {
   type CallMembership,
-  type LivekitTransportConfig,
+  type LivekitTransport,
   type MatrixRTCSession,
   MatrixRTCSessionEvent,
-  isLivekitTransportConfig,
+  isLivekitTransport,
 } from "matrix-js-sdk/lib/matrixrtc";
 import { fromEvent } from "rxjs";
 
@@ -22,48 +22,41 @@ import {
 } from "./ObservableScope";
 import { type Behavior } from "./Behavior";
 
+/**
+ * Tracks the transports used by ourselves, plus all other MatrixRTC session
+ * members.
+ */
 export const membershipsAndTransports$ = (
   scope: ObservableScope,
   memberships$: Behavior<Epoch<CallMembership[]>>,
 ): {
   membershipsWithTransport$: Behavior<
-    Epoch<{ membership: CallMembership; transport?: LivekitTransportConfig }[]>
+    Epoch<{ membership: CallMembership; transport?: LivekitTransport }[]>
   >;
-  transports$: Behavior<Epoch<LivekitTransportConfig[]>>;
+  transports$: Behavior<Epoch<LivekitTransport[]>>;
 } => {
-  /**
-   * Lists the transports used by ourselves, plus all other MatrixRTC session
-   * members.
-   * For completeness this also lists the preferred transport and
-   * whether we are in multi-SFU mode or sticky events mode.
-   * `advertisedTransport$` reads these values together, so bundling them avoids inconsistent state or
-   * excessive updates when using RxJS.
-   */
   const membershipsWithTransport$: Behavior<
     Epoch<
       {
         membership: CallMembership;
-        transport: LivekitTransportConfig | undefined;
+        transport: LivekitTransport | undefined;
       }[]
     >
   > = scope.behavior(
     memberships$.pipe(
       mapEpoch((memberships) => {
         return memberships.map((membership) => {
-          const oldestMembership = memberships[0] ?? membership;
-          const transport = membership.getTransport(oldestMembership);
+          const transport = membership.getTransport();
           return {
             membership,
-            transport: isLivekitTransportConfig(transport)
-              ? transport
-              : undefined,
+            transport: isLivekitTransport(transport) ? transport : undefined,
           };
         });
       }),
     ),
   );
 
-  const transports$: Behavior<Epoch<LivekitTransportConfig[]>> = scope.behavior(
+  const transports$: Behavior<Epoch<LivekitTransport[]>> = scope.behavior(
     membershipsWithTransport$.pipe(
       mapEpoch((mts) => mts.flatMap(({ transport: t }) => (t ? [t] : []))),
     ),
@@ -86,5 +79,24 @@ export const createMemberships$ = (
       (_, memberships: CallMembership[]) => memberships,
     ).pipe(trackEpoch()),
     new Epoch(matrixRTCSession.memberships),
+  );
+};
+
+/**
+ * Whether the session has grown large enough that MatrixRTC has stopped rotating the media
+ * encryption key. While this is true the key in use is still shared with new joiners, but no new
+ * key is generated when someone joins or leaves.
+ */
+export const createKeyRotationSuppressed$ = (
+  scope: ObservableScope,
+  matrixRTCSession: MatrixRTCSession,
+): Behavior<boolean> => {
+  return scope.behavior(
+    fromEvent(
+      matrixRTCSession,
+      MatrixRTCSessionEvent.KeyRotationSuppressedChanged,
+      (suppressed: boolean) => suppressed,
+    ),
+    matrixRTCSession.isKeyRotationSuppressed,
   );
 };

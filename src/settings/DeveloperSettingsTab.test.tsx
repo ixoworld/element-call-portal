@@ -12,9 +12,21 @@ import { TooltipProvider } from "@vector-im/compound-web";
 
 import type { MatrixClient } from "matrix-js-sdk";
 import type { Room as LivekitRoom } from "livekit-client";
-import { DeveloperSettingsTab } from "./DeveloperSettingsTab";
+import {
+  DeveloperSettingsTab,
+  type DeveloperSettingsSnapshot,
+} from "./DeveloperSettingsTab";
+import { outOfCallDeveloperSettingsTabViewModel } from "./DeveloperSettingsTabViewModel";
+import { createStaticViewModel } from "../state/ViewModel";
 import { getSFUConfigWithOpenID } from "../livekit/openIDSFU";
-import { customLivekitUrl as customLivekitUrlSetting } from "./settings";
+import {
+  customLivekitUrl as customLivekitUrlSetting,
+  enableExtendedLivekitLogs as enableExtendedLivekitLogsSetting,
+  matrixRTCMode as matrixRTCModeSetting,
+} from "./settings";
+import { MatrixRTCMode } from "../config/ConfigOptions";
+import { mockConfig } from "../utils/test";
+
 // Mock url params hook to avoid environment-dependent snapshot churn.
 vi.mock("../UrlParams", () => ({
   useUrlParams: (): { mocked: boolean; answer: number } => ({
@@ -100,6 +112,7 @@ describe("DeveloperSettingsTab", () => {
         roomId={"#room:example.org"}
         livekitRooms={livekitRooms}
         env={{ MY_MOCK_ENV: 10, ENV: "test" } as unknown as ImportMetaEnv}
+        vm={outOfCallDeveloperSettingsTabViewModel}
       />,
     );
 
@@ -129,6 +142,7 @@ describe("DeveloperSettingsTab", () => {
           <DeveloperSettingsTab
             client={client}
             env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
           />
         </TooltipProvider>,
       );
@@ -152,6 +166,7 @@ describe("DeveloperSettingsTab", () => {
             client={client}
             roomId="#testRoom"
             env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
           />
         </TooltipProvider>,
       );
@@ -174,6 +189,7 @@ describe("DeveloperSettingsTab", () => {
             client={client}
             roomId="#testRoom"
             env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
           />
         </TooltipProvider>,
       );
@@ -199,6 +215,7 @@ describe("DeveloperSettingsTab", () => {
             client={client}
             roomId="#testRoom"
             env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
           />
         </TooltipProvider>,
       );
@@ -229,6 +246,7 @@ describe("DeveloperSettingsTab", () => {
             client={client}
             roomId="#testRoom"
             env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
           />
         </TooltipProvider>,
       );
@@ -246,6 +264,225 @@ describe("DeveloperSettingsTab", () => {
         screen.getByText("invalid URL (did not update)"),
       ).toBeInTheDocument();
       expect(customLivekitUrlSetting.getValue()).toBe(null);
+    });
+  });
+
+  // Add this test inside the describe("DeveloperSettingsTab", () => { block,
+  // after the custom livekit url tests:
+
+  describe("enable extended livekit logs", () => {
+    afterEach(() => {
+      enableExtendedLivekitLogsSetting.setValue(false);
+    });
+
+    it("toggles extended livekit logs setting", async () => {
+      const user = userEvent.setup();
+      const client = createMockMatrixClient();
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
+          />
+        </TooltipProvider>,
+      );
+
+      const checkbox = screen.getByLabelText("Enable extended livekit logs");
+
+      // Initial state should be unchecked (default false)
+      expect(checkbox).not.toBeChecked();
+      expect(enableExtendedLivekitLogsSetting.getValue()).toBe(false);
+
+      // Click to enable
+      await user.click(checkbox);
+      expect(checkbox).toBeChecked();
+      expect(enableExtendedLivekitLogsSetting.getValue()).toBe(true);
+
+      // Click to disable
+      await user.click(checkbox);
+      expect(checkbox).not.toBeChecked();
+      expect(enableExtendedLivekitLogsSetting.getValue()).toBe(false);
+    });
+
+    it("Use the current setting value on render", () => {
+      const client = createMockMatrixClient();
+
+      // Set the value to true before rendering
+      enableExtendedLivekitLogsSetting.setValue(true);
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
+          />
+        </TooltipProvider>,
+      );
+
+      const checkbox = screen.getByLabelText("Enable extended livekit logs");
+      expect(checkbox).toBeChecked();
+      expect(enableExtendedLivekitLogsSetting.getValue()).toBe(true);
+    });
+  });
+
+  describe("matrix rtc mode", () => {
+    afterEach(() => {
+      matrixRTCModeSetting.setValue(MatrixRTCMode.Compatibility);
+      vi.restoreAllMocks();
+    });
+
+    function getModeRadios(): {
+      compatibility: HTMLInputElement;
+      matrix20: HTMLInputElement;
+    } {
+      return {
+        compatibility: screen.getByDisplayValue(
+          MatrixRTCMode.Compatibility,
+        ) as HTMLInputElement,
+        matrix20: screen.getByDisplayValue(
+          MatrixRTCMode.Matrix_2_0,
+        ) as HTMLInputElement,
+      };
+    }
+
+    it("radios reflect the localStorage setting when config does not force the mode", async () => {
+      mockConfig({});
+      matrixRTCModeSetting.setValue(MatrixRTCMode.Compatibility);
+      const client = createMockMatrixClient();
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
+          />
+        </TooltipProvider>,
+      );
+
+      await waitFor(() =>
+        expect(client.doesServerSupportUnstableFeature).toHaveBeenCalled(),
+      );
+
+      const radios = getModeRadios();
+      expect(radios.compatibility).toBeChecked();
+      expect(radios.matrix20).not.toBeChecked();
+      // None are disabled by config; only Matrix_2_0 may be disabled by sticky-events support.
+      expect(radios.compatibility).not.toBeDisabled();
+    });
+
+    it.each([MatrixRTCMode.Compatibility, MatrixRTCMode.Matrix_2_0])(
+      "disables all radios and shows the config value (%s) as checked when matrix_rtc_mode is set",
+      async (configMode) => {
+        mockConfig({ matrix_rtc_mode: configMode });
+        // Local setting is intentionally different from the config value to
+        // prove config wins.
+        matrixRTCModeSetting.setValue(
+          configMode === MatrixRTCMode.Compatibility
+            ? MatrixRTCMode.Matrix_2_0
+            : MatrixRTCMode.Compatibility,
+        );
+        const client = createMockMatrixClient();
+
+        render(
+          <TooltipProvider>
+            <DeveloperSettingsTab
+              client={client}
+              env={{} as unknown as ImportMetaEnv}
+              vm={outOfCallDeveloperSettingsTabViewModel}
+            />
+          </TooltipProvider>,
+        );
+
+        await waitFor(() =>
+          expect(client.doesServerSupportUnstableFeature).toHaveBeenCalled(),
+        );
+
+        const radios = getModeRadios();
+        expect(radios.compatibility).toBeDisabled();
+        expect(radios.matrix20).toBeDisabled();
+
+        const checkedValue = (
+          {
+            [MatrixRTCMode.Compatibility]: radios.compatibility,
+            [MatrixRTCMode.Matrix_2_0]: radios.matrix20,
+          } as const
+        )[configMode];
+        expect(checkedValue).toBeChecked();
+      },
+    );
+  });
+
+  describe("KeyRotationStatus", () => {
+    it("displays active status when key rotation is not suppressed", async () => {
+      const client = createMockMatrixClient();
+      const vm = createStaticViewModel<DeveloperSettingsSnapshot>({
+        keyRotation: { suppressed: false, participantCount: 5 },
+      });
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={vm}
+          />
+        </TooltipProvider>,
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(/Media key rotation: active \(5 participants\)/),
+        ).toBeInTheDocument(),
+      );
+    });
+
+    it("displays suppressed status when key rotation is suppressed", async () => {
+      const client = createMockMatrixClient();
+      const vm = createStaticViewModel<DeveloperSettingsSnapshot>({
+        keyRotation: { suppressed: true, participantCount: 50 },
+      });
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={vm}
+          />
+        </TooltipProvider>,
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(
+            /Media key rotation: suppressed, participant limit reached \(50 participants\)/,
+          ),
+        ).toBeInTheDocument(),
+      );
+    });
+
+    it("does not render KeyRotationStatus when not in a call", async () => {
+      const client = createMockMatrixClient();
+
+      render(
+        <TooltipProvider>
+          <DeveloperSettingsTab
+            client={client}
+            env={{} as unknown as ImportMetaEnv}
+            vm={outOfCallDeveloperSettingsTabViewModel}
+          />
+        </TooltipProvider>,
+      );
+
+      await waitFor(() =>
+        expect(
+          screen.queryByText(/Media key rotation:/),
+        ).not.toBeInTheDocument(),
+      );
     });
   });
 });

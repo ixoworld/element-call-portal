@@ -19,15 +19,18 @@ import {
 import {
   type LocalParticipant,
   type RemoteParticipant,
+  type RemoteTrack,
+  type RemoteTrackPublication,
   type Room as LivekitRoom,
   RoomEvent,
+  Track,
   ConnectionState as LivekitConnectionState,
 } from "livekit-client";
 import fetchMock from "fetch-mock";
 import EventEmitter from "events";
 import { type IOpenIDToken } from "matrix-js-sdk";
-import { logger } from "matrix-js-sdk/lib/logger";
-import { type LivekitTransportConfig } from "matrix-js-sdk/lib/matrixrtc";
+import { logger, type Logger } from "matrix-js-sdk/lib/logger";
+import { type LivekitTransport } from "matrix-js-sdk/lib/matrixrtc";
 
 import {
   Connection,
@@ -54,7 +57,7 @@ let fakeLocalParticipant: MockedObject<LocalParticipant>;
 
 const ROOM_ID = "!roomID:example.org";
 
-const livekitFocus: LivekitTransportConfig = {
+const livekitFocus: LivekitTransport = {
   livekit_service_url: "https://matrix-rtc.example.org/livekit/jwt",
   type: "livekit",
 };
@@ -225,9 +228,7 @@ describe("Start connection states", () => {
     capturedState = capturedStates.pop();
     if (capturedState instanceof Error) {
       expect(capturedState.message).toEqual("Something went wrong");
-      expect(connection.transport.livekit_alias).toEqual(
-        livekitFocus.livekit_alias,
-      );
+      expect(connection.transport).toEqual(livekitFocus);
     } else {
       expect.fail("Expected FailedToStart state but got " + capturedState);
     }
@@ -260,7 +261,10 @@ describe("Start connection states", () => {
       await deferredSFU.promise;
       return {
         status: 500,
-        body: "Internal Server Error",
+        body: {
+          errcode: "M_LOOKUP_FAILED",
+          error: "Failed to look up user info from homeserver",
+        },
       };
     });
 
@@ -282,11 +286,9 @@ describe("Start connection states", () => {
       capturedState.cause instanceof Error
     ) {
       expect(capturedState.cause.message).toContain(
-        "SFU Config fetch failed with status code 500",
+        "Failed to look up user info from homeserver",
       );
-      expect(connection.transport.livekit_alias).toEqual(
-        livekitFocus.livekit_alias,
-      );
+      expect(connection.transport).toEqual(livekitFocus);
     } else {
       expect.fail("Expected FailedToStart state but got " + capturedState);
     }
@@ -351,9 +353,7 @@ describe("Start connection states", () => {
       expect(capturedState.cause.message).toContain(
         "Failed to connect to livekit",
       );
-      expect(connection.transport.livekit_alias).toEqual(
-        livekitFocus.livekit_alias,
-      );
+      expect(connection.transport).toEqual(livekitFocus);
     } else {
       expect.fail(
         "Expected FailedToStart state but got " + JSON.stringify(capturedState),
@@ -386,6 +386,34 @@ describe("Start connection states", () => {
     expect(connectingState).toEqual(ConnectionState.LivekitConnecting);
     const connectedState = capturedStates.shift();
     expect(connectedState).toEqual(ConnectionState.LivekitConnected);
+  });
+
+  it("stopping while connecting does not report an error", async () => {
+    setupTest();
+    const connection = setupRemoteConnection();
+
+    const capturedStates: (ConnectionState | Error)[] = [];
+    const s = connection.state$.subscribe((value) => {
+      capturedStates.push(value);
+    });
+    onTestFinished(() => s.unsubscribe());
+
+    // livekit-client rejects a pending connect() when disconnect() is called.
+    const pendingConnect = Promise.withResolvers<void>();
+    fakeLivekitRoom.connect.mockReturnValue(pendingConnect.promise);
+    fakeLivekitRoom.disconnect.mockResolvedValue(undefined);
+
+    const started = connection.start();
+    await vi.waitFor(() => expect(fakeLivekitRoom.connect).toHaveBeenCalled());
+    const stopping = connection.stop();
+    pendingConnect.reject(new Error("Client initiated disconnect"));
+    await stopping;
+
+    // start() resolves rather than rejecting (it is not awaited by the
+    // ConnectionManager, so a rejection would be unhandled).
+    await expect(started).resolves.toBeUndefined();
+    expect(capturedStates.at(-1)).toEqual(ConnectionState.Stopped);
+    expect(capturedStates.some((st) => st instanceof Error)).toBe(false);
   });
 
   it("shutting down the scope should stop the connection", async () => {
@@ -503,6 +531,97 @@ describe("remote participants", () => {
     );
 
     expect(observedParticipants.length).toEqual(0);
+  });
+});
+
+describe("remote track logging", () => {
+  it("logs remote participant and track events on the connection logger", () => {
+    setupTest();
+    const info = vi.fn();
+    const warn = vi.fn();
+    const testLogger = {
+      getChild: (): unknown => testLogger,
+      info,
+      debug: vi.fn(),
+      warn,
+      error: vi.fn(),
+    } as unknown as Logger;
+    new Connection(
+      {
+        client,
+        roomId: ROOM_ID,
+        transport: livekitFocus,
+        scope: testScope,
+        ownMembershipIdentity: ownMemberMock,
+        livekitRoomFactory: () => fakeLivekitRoom,
+      },
+      testLogger,
+    );
+    info.mockClear(); // drop the constructor log line
+
+    const bob = mockRemoteParticipant({
+      identity: "@bob:example.org:DEV111",
+      sid: "PA_bob",
+    });
+    const pub = {
+      kind: "audio",
+      source: "microphone",
+      trackSid: "TR_mic",
+      isMuted: false,
+      isEncrypted: true,
+    } as unknown as RemoteTrackPublication;
+    const messages = (): string[] => info.mock.calls.map((c) => c[0] as string);
+
+    fakeLivekitRoom.emit(RoomEvent.ParticipantConnected, bob);
+    fakeLivekitRoom.emit(
+      RoomEvent.TrackSubscribed,
+      {} as RemoteTrack,
+      pub,
+      bob,
+    );
+    fakeLivekitRoom.emit(RoomEvent.TrackMuted, pub, bob);
+    fakeLivekitRoom.emit(
+      RoomEvent.TrackStreamStateChanged,
+      pub,
+      Track.StreamState.Paused,
+      bob,
+    );
+    expect(messages()).toEqual([
+      "Participant connected: @bob:example.org:DEV111 (PA_bob)",
+      "Subscribed: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true muted=false",
+      "Muted: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true",
+      "Stream paused: audio microphone TR_mic of @bob:example.org:DEV111 encrypted=true",
+    ]);
+
+    // Encryption status changes are logged; cryptor errors are warnings
+    fakeLivekitRoom.emit(
+      RoomEvent.ParticipantEncryptionStatusChanged,
+      false,
+      bob,
+    );
+    expect(messages().at(-1)).toBe(
+      "Encryption status of @bob:example.org:DEV111: encrypted=false",
+    );
+    const cryptorError = new Error("missing key at index 3");
+    fakeLivekitRoom.emit(RoomEvent.EncryptionError, cryptorError, bob);
+    expect(warn).toHaveBeenCalledWith(
+      "Encryption error for @bob:example.org:DEV111:",
+      cryptorError,
+    );
+
+    // Local mute events are already logged by the Publisher
+    fakeLivekitRoom.emit(RoomEvent.TrackMuted, pub, {
+      ...fakeLocalParticipant,
+      isLocal: true,
+    } as unknown as LocalParticipant);
+    expect(messages().filter((m) => m.startsWith("Muted"))).toHaveLength(1);
+
+    // Listeners are removed when the scope ends
+    testScope.end();
+    fakeLivekitRoom.emit(RoomEvent.ParticipantDisconnected, bob);
+    expect(
+      messages().filter((m) => m.startsWith("Participant disconnected")),
+    ).toHaveLength(0);
   });
 });
 

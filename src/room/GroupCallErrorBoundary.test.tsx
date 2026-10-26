@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import {
   type FC,
@@ -14,8 +14,10 @@ import {
   useCallback,
   useState,
 } from "react";
-import { BrowserRouter } from "react-router-dom";
+import { LeaveToHomeProvider } from "../LeaveToHomeContext";
 import userEvent from "@testing-library/user-event";
+import { ConnectionError } from "livekit-client";
+import { MatrixError } from "matrix-js-sdk";
 
 import {
   type CallErrorRecoveryAction,
@@ -25,12 +27,23 @@ import {
   ConnectionLostError,
   E2EENotSupportedError,
   type ElementCallError,
+  FailToGetOpenIdToken,
   InsufficientCapacityError,
+  LivekitConnectionError,
   MatrixRTCTransportMissingError,
+  PeerConnectionTimeoutError,
+  StickyEventsRequiredError,
   UnknownCallError,
 } from "../utils/errors.ts";
 import { mockConfig } from "../utils/test.ts";
-import { ElementWidgetActions, type WidgetHelpers } from "../widget.ts";
+import {
+  type HostBridge,
+  HostBridgeProvider,
+  nullHostBridge,
+} from "../HostBridge.ts";
+
+// Somewhere to go home to, so that the error pages offer the way
+const leaveToHome = vi.fn();
 
 test.each([
   {
@@ -54,6 +67,12 @@ test.each([
     expectedDescription:
       "The server has reached its maximum capacity and you cannot join the call at this time. Try again later, or contact your server admin if the problem persists.",
   },
+  {
+    error: new StickyEventsRequiredError(),
+    expectedTitle: "Homeserver does not support Matrix 2.0 calls",
+    expectedDescription:
+      "This deployment is configured to use Matrix 2.0 call mode, but the homeserver does not advertise support for sticky events (MSC4354). Ask your server admin to upgrade, or switch the deployment to a compatible mode.",
+  },
 ])(
   "should report correct error for $expectedTitle",
   async ({ error, expectedTitle, expectedDescription }) => {
@@ -63,15 +82,14 @@ test.each([
 
     const onErrorMock = vi.fn();
     const { asFragment } = render(
-      <BrowserRouter>
+      <LeaveToHomeProvider value={leaveToHome}>
         <GroupCallErrorBoundary
           onError={onErrorMock}
           recoveryActionHandler={vi.fn()}
-          widget={null}
         >
           <TestComponent />
         </GroupCallErrorBoundary>
-      </BrowserRouter>,
+      </LeaveToHomeProvider>,
     );
 
     await screen.findByText(expectedTitle);
@@ -91,16 +109,19 @@ test("should render the error page with link back to home", async () => {
   };
 
   const onErrorMock = vi.fn();
+  // From the home page itself the home button reloads instead of navigating,
+  // so be somewhere else for this test
+  window.history.pushState({}, "", "/room/somewhere");
+  onTestFinished(() => window.history.pushState({}, "", "/"));
   const { asFragment } = render(
-    <BrowserRouter>
+    <LeaveToHomeProvider value={leaveToHome}>
       <GroupCallErrorBoundary
         onError={onErrorMock}
         recoveryActionHandler={vi.fn()}
-        widget={null}
       >
         <TestComponent />
       </GroupCallErrorBoundary>
-    </BrowserRouter>,
+    </LeaveToHomeProvider>,
   );
 
   await screen.findByText("Call is not supported");
@@ -109,7 +130,11 @@ test("should render the error page with link back to home", async () => {
     screen.getByText(/Error Code: MISSING_MATRIX_RTC_TRANSPORT/i),
   ).toBeInTheDocument();
 
-  await screen.findByRole("button", { name: "Return to home screen" });
+  // The way home is whatever the shell supplied, not a route of the call's own
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Return to home screen" }));
+  expect(leaveToHome).toHaveBeenCalledOnce();
 
   expect(onErrorMock).toHaveBeenCalledOnce();
   expect(onErrorMock).toHaveBeenCalledWith(error);
@@ -141,14 +166,11 @@ test("ConnectionLostError: Action handling should reset error state", async () =
     );
 
     return (
-      <BrowserRouter>
-        <GroupCallErrorBoundary
-          recoveryActionHandler={reconnectCallback}
-          widget={null}
-        >
+      <LeaveToHomeProvider value={leaveToHome}>
+        <GroupCallErrorBoundary recoveryActionHandler={reconnectCallback}>
           <TestComponent fail={failState} />
         </GroupCallErrorBoundary>
-      </BrowserRouter>
+      </LeaveToHomeProvider>
     );
   };
 
@@ -183,15 +205,14 @@ describe("Rageshake button", () => {
     };
 
     render(
-      <BrowserRouter>
+      <LeaveToHomeProvider value={leaveToHome}>
         <GroupCallErrorBoundary
           onError={vi.fn()}
           recoveryActionHandler={vi.fn()}
-          widget={null}
         >
           <TestComponent />
         </GroupCallErrorBoundary>
-      </BrowserRouter>,
+      </LeaveToHomeProvider>,
     );
   }
 
@@ -212,30 +233,28 @@ describe("Rageshake button", () => {
   });
 });
 
-test("should have a close button in widget mode", async () => {
+test("should have a close button when the host can dismiss us", async () => {
   const error = new MatrixRTCTransportMissingError("example.com");
   const TestComponent = (): ReactNode => {
     throw error;
   };
 
-  const mockWidget = {
-    api: {
-      transport: { send: vi.fn().mockResolvedValue(undefined), stop: vi.fn() },
-    },
-  } as unknown as WidgetHelpers;
+  const close = vi.fn().mockResolvedValue(undefined);
+  const hostBridge: HostBridge = { ...nullHostBridge, close };
 
   const user = userEvent.setup();
   const onErrorMock = vi.fn();
   const { asFragment } = render(
-    <BrowserRouter>
-      <GroupCallErrorBoundary
-        widget={mockWidget}
-        onError={onErrorMock}
-        recoveryActionHandler={vi.fn()}
-      >
-        <TestComponent />
-      </GroupCallErrorBoundary>
-    </BrowserRouter>,
+    <LeaveToHomeProvider value={leaveToHome}>
+      <HostBridgeProvider value={hostBridge}>
+        <GroupCallErrorBoundary
+          onError={onErrorMock}
+          recoveryActionHandler={vi.fn()}
+        >
+          <TestComponent />
+        </GroupCallErrorBoundary>
+      </HostBridgeProvider>
+    </LeaveToHomeProvider>,
   );
 
   await screen.findByText("Call is not supported");
@@ -246,9 +265,157 @@ test("should have a close button in widget mode", async () => {
 
   await user.click(screen.getByRole("button", { name: "Close" }));
 
-  expect(mockWidget.api.transport.send).toHaveBeenCalledWith(
-    ElementWidgetActions.Close,
-    expect.anything(),
+  expect(close).toHaveBeenCalled();
+});
+
+test("should show technical details when error has a matrixError cause", async () => {
+  const underlyingError = new MatrixError(
+    {
+      errcode: "M_LOOKUP_FAILED",
+      error: "Failed to look up user info from homeserver",
+    },
+    500,
+    "https://matrix-rtc.m.localhost/livekit/jwt/sfu/get",
   );
-  expect(mockWidget.api.transport.stop).toHaveBeenCalled();
+  const error = new FailToGetOpenIdToken(underlyingError);
+
+  const TestComponent = (): ReactNode => {
+    throw error;
+  };
+
+  render(
+    <LeaveToHomeProvider value={leaveToHome}>
+      <GroupCallErrorBoundary onError={vi.fn()} recoveryActionHandler={vi.fn()}>
+        <TestComponent />
+      </GroupCallErrorBoundary>
+    </LeaveToHomeProvider>,
+  );
+
+  await screen.findByText("Something went wrong");
+
+  // Technical details should be present
+  const detailsElement = screen.getByText("Technical details");
+  expect(detailsElement).toBeInTheDocument();
+
+  // Verify error details are shown
+  expect(
+    screen.getByText(/Failed to look up user info from homeserver/i, {
+      selector: "pre",
+    }),
+  ).toBeInTheDocument();
+});
+
+test("should not show technical details when error has no matrix error cause", async () => {
+  const error = new ConnectionLostError();
+
+  const TestComponent = (): ReactNode => {
+    throw error;
+  };
+
+  render(
+    <LeaveToHomeProvider value={leaveToHome}>
+      <GroupCallErrorBoundary onError={vi.fn()} recoveryActionHandler={vi.fn()}>
+        <TestComponent />
+      </GroupCallErrorBoundary>
+    </LeaveToHomeProvider>,
+  );
+
+  await screen.findByText("Connection lost");
+
+  // Technical details should not be present (ConnectionLostError has no cause)
+  expect(screen.queryByText("Technical details")).not.toBeInTheDocument();
+});
+
+describe("LiveKit ConnectionError variants", () => {
+  test.each([
+    {
+      name: "notAllowed",
+      error: ConnectionError.notAllowed("Permission denied by server", 403),
+      expectedReason: "NotAllowed",
+    },
+    {
+      name: "timeout",
+      error: ConnectionError.timeout("Connection timed out"),
+      expectedReason: "Timeout",
+    },
+    {
+      name: "serverUnreachable",
+      error: ConnectionError.serverUnreachable("Server is unreachable", 503),
+      expectedReason: "ServerUnreachable",
+    },
+    {
+      name: "serviceNotFound",
+      error: ConnectionError.serviceNotFound(
+        "RTC service not found",
+        "v0-rtc" as const,
+      ),
+      expectedReason: "ServiceNotFound",
+    },
+    {
+      name: "internal",
+      error: ConnectionError.internal("Internal server error", {
+        status: 500,
+        statusText: "Internal Server Error",
+      }),
+      expectedReason: "InternalError",
+    },
+  ])(
+    "should display LiveKit $name error correctly",
+    async ({ error, expectedReason }) => {
+      const TestComponent = (): ReactNode => {
+        throw new LivekitConnectionError(error);
+      };
+
+      const { asFragment } = render(
+        <LeaveToHomeProvider value={leaveToHome}>
+          <GroupCallErrorBoundary
+            onError={vi.fn()}
+            recoveryActionHandler={vi.fn()}
+          >
+            <TestComponent />
+          </GroupCallErrorBoundary>
+        </LeaveToHomeProvider>,
+      );
+
+      // Check title
+      await screen.findByText("Failed to connect to Livekit server");
+
+      // Check that reason is displayed in the description
+      expect(screen.getByText(/Reason:/i)).toBeInTheDocument();
+      expect(screen.getByText(expectedReason)).toBeInTheDocument();
+
+      expect(asFragment()).toMatchSnapshot();
+    },
+  );
+
+  test("should link to troubleshoot guide when timeout error", async () => {
+    const error = new PeerConnectionTimeoutError();
+
+    const TestComponent = (): ReactNode => {
+      throw error;
+    };
+
+    const { asFragment } = render(
+      <LeaveToHomeProvider value={leaveToHome}>
+        <GroupCallErrorBoundary
+          onError={vi.fn()}
+          recoveryActionHandler={vi.fn()}
+        >
+          <TestComponent />
+        </GroupCallErrorBoundary>
+      </LeaveToHomeProvider>,
+    );
+
+    await screen.findByText("Connection timeout");
+
+    // Verify the link is present and has correct href
+    const link = screen.getByText("troubleshooting guide");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://docs.element.io/latest/element-server-suite-pro/configuring-components/configuring-matrix-rtc/#sfu-connectivity-troubleshooting",
+    );
+
+    // Snapshot the complete rendered error
+    expect(asFragment()).toMatchSnapshot();
+  });
 });

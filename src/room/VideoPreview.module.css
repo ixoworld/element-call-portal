@@ -9,7 +9,11 @@ Please see LICENSE in the repository root for full details.
   margin-left: var(--content-inset-left);
   margin-right: var(--content-inset-right);
   min-block-size: 0;
-  block-size: 50vh;
+  /* Half the height of Element Call's root, not of the viewport: embedded,
+  the two differ (see the note on container units in base.css) */
+  block-size: 50cqh;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
   border-radius: var(--cpd-space-4x);
   position: relative;
   overflow: hidden;
@@ -20,6 +24,9 @@ Please see LICENSE in the repository root for full details.
   height: 100%;
   object-fit: cover;
   background-color: var(--video-tile-background);
+  /* In FF if you add a transform: scale/translate/matrix filter on an element,
+  it'll ignore the parents' border-radius, so force back the radius to avoid UI glitch*/
+  border-radius: inherit;
 }
 
 video.mirror {
@@ -66,13 +73,7 @@ video.mirror {
   );
 }
 
-@media (min-aspect-ratio: 1 / 1) {
-  .preview > video {
-    aspect-ratio: 16 / 9;
-  }
-}
-
-@media (max-width: 550px) {
+@container element-call (max-width: 550px) {
   .preview {
     margin-inline: 0;
     border-radius: 0;
