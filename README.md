@@ -34,15 +34,16 @@ You can find the latest development version continuously deployed to
 ## ✨ Key Features
 
 ✅ **Decentralized & Federated** – No central authority; works across Matrix
-homeservers.  
-✅ **End-to-End Encrypted** – Secure and private calls.  
-✅ **Standalone & Widget Mode** – Use as an independent app or embed in Matrix
-clients.  
-✅ **WebRTC-based** – No additional software required.  
+homeservers.
+✅ **End-to-End Encrypted** – Secure and private calls.
+✅ **Standalone, Widget & Component Mode** – Use as an independent app, embed
+in Matrix clients as a widget, or (experimentally) mount it as a React component
+inside your own application.
+✅ **WebRTC-based** – No additional software required.
 ✅ **Scalable with LiveKit** – Supports large meetings via SFU
-([MSC4195: MatrixRTC using LiveKit backend](https://github.com/hughns/matrix-spec-proposals/blob/hughns/matrixrtc-livekit/proposals/4195-matrixrtc-livekit.md)).  
+([MSC4195: MatrixRTC using LiveKit backend](https://github.com/hughns/matrix-spec-proposals/blob/hughns/matrixrtc-livekit/proposals/4195-matrixrtc-livekit.md)).
 ✅ **Raise Hand** – Participants can signal when they want to speak, helping to
-organize the flow of the meeting.  
+organize the flow of the meeting.
 ✅ **Emoji Reactions** – Users can react with emojis 👍️ 🎉 👏 🤘, adding
 engagement and interactivity to the conversation.
 
@@ -90,7 +91,9 @@ and voice calls within Matrix rooms.
 
 Element Call offers two packaging options: one for standalone or widget
 deployment, and another for seamless widget-based integration into messenger
-apps. Below is an overview of each option.
+apps. A third, experimental option builds it as a React component library for
+applications that want to render a call inside their own page rather than in an
+iframe. Below is an overview of each option.
 
 **Full Package** – Supports both **Standalone** and **Widget** mode. It is
 hosted as a static web page and can be accessed via a URL when used as a widget.
@@ -107,6 +110,11 @@ recommended method for embedding Element Call.
   <img src="./docs/embedded_package.drawio.png" alt="Element Call Embedded Package">
 </p>
 
+**Component Package (experimental)** – A library build of Element Call as a
+React component, consumed as a dependency by a host application that already
+has a Matrix client. See
+[Element Call as a component](#element-call-as-a-component-experimental) below.
+
 For more details on the packages, see the
 [Embedded vs. Standalone Guide](./docs/embedded_standalone.md).
 
@@ -115,30 +123,33 @@ For more details on the packages, see the
 For operating and deploying Element Call on your own server, refer to the
 [**Self-Hosting Guide**](./docs/self_hosting.md).
 
-## 🧭 MatrixRTC Backend Discovery and Selection
+## MatrixRTC Transports
 
-For proper Element Call operation each site deployment needs a MatrixRTC backend
-setup as outlined in the [Self-Hosting Guide](./docs/self_hosting.md). A typical
-federated site deployment for three different sites A, B and C is depicted below.
+For proper operation of Element Call, each deployment needs to set up a
+MatrixRTC transport in the form of a LiveKit server as outlined in the
+[Self-Hosting Guide](./docs/self_hosting.md). A typical federated site
+deployment for three different sites A, B and C is depicted below.
 
 <p align="center">
   <img src="./docs/Federated_Setup.drawio.png" alt="Element Call federated setup">
 </p>
 
-### Backend Discovery
+### Transport Discovery
 
-The MatrixRTC backend (according to
-[MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143)) is
-announced by the Matrix site's `.well-known/matrix/client` file and discovered
-via the `org.matrix.msc4143.rtc_foci` key, e.g.:
+Element Call discovers the available MatrixRTC transports (as defined by
+[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/pull/4519)) by
+hitting the `GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports`
+endpoint of the Client-Server API. An example response:
 
 ```json
-"org.matrix.msc4143.rtc_foci": [
+{
+  "rtc_transports": [
     {
-        "type": "livekit",
-        "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
-    },
-]
+      "type": "livekit",
+      "livekit_service_url": "https://matrix-rtc.example.com/livekit/jwt"
+    }
+  ]
+}
 ```
 
 where the format for MatrixRTC using LiveKit backend is defined in
@@ -149,7 +160,7 @@ via `livekit_service_url`.
 
 ### Backend Selection
 
-- Each call participant proposes their discovered MatrixRTC backend from
+- Each call participant proposes their discovered MatrixRTC transport from
   `org.matrix.msc4143.rtc_foci` in their `org.matrix.msc3401.call.member` state event.
 - For the **LiveKit** MatrixRTC backend
   ([MSC4195](https://github.com/hughns/matrix-spec-proposals/blob/hughns/matrixrtc-livekit/proposals/4195-matrixrtc-livekit.md)),
@@ -210,9 +221,116 @@ See also:
 
 - [Developing with linked packages](./docs/linking.md)
 
+#### Element Call as a component (experimental)
+
+Element Call can also be embedded directly into another React application
+rather than being loaded in an iframe as a widget. `pnpm build:component`
+builds it as a library into `component/dist` (the bundle, its stylesheet and
+type declarations), and
+
+```sh
+pnpm dev:component
+```
+
+serves a harness on port 3001 that stands in for such an application: it signs
+in twice against the development backend and shows two calls side by side, in
+resizable boxes, with page furniture of its own around them. Use it to see how
+Element Call behaves when it does not own the page — the size it is given,
+whether it stays inside its container, and what it says to its host, which is
+logged along the bottom. The harness is served with the same development
+certificate as the app, so unless the development CA is trusted, the browser
+needs a certificate exception for `https://localhost:3001` as well (see the
+note under [Backend](#backend)). It reads the same `public/config.json` as
+`pnpm dev` if one exists, and runs with Element Call's defaults otherwise.
+
+The call lays itself out for the size of the element it is mounted in, not the
+window: a host that shrinks the container to a corner of its page gets the
+picture-in-picture layout, just as a host that shrank the whole iframe used to.
+The breakpoints in the stylesheets the component uses are
+`@container element-call` queries against its root element for the same reason;
+for the standalone app the root is the page, so they mean what the media queries
+they replaced did. (The standalone-only views, such as the home and login pages,
+still use plain media queries, since the component never shows them.)
+
+The component's stylesheet is confined to the element it is mounted in: the
+build rewrites every selector so that it matches only Element Call's root or
+what is inside it, with `html`, `body` and `:root` standing for that root (see
+`component/build/scopeStylesToRoot.ts`). A host's own page keeps its styles,
+and Element Call brings its own fonts and design tokens along.
+
+The component speaks every language the app does. English is bundled in; the
+other locales are split into chunks the host's bundler loads the first time
+they are needed. It starts in the browser's language, and follows the host's
+own language setting through the `language` prop (`supportedLanguages` lists
+the tags it accepts, and anything else falls back to its base language or to
+English). The `theme` prop works the same way and takes the same values as the
+widget's `theme` URL parameter: `light`, `dark`, `light-high-contrast` or
+`dark-high-contrast`. Both can change while a call is running without
+disturbing it.
+
+A host must call and await `initializeElementCall(config)` once before
+rendering the component: it loads the `Intl` polyfills, applies the
+deployment-wide `config.json`-style configuration and sets up translations.
+The component itself takes the host's `client` and the `roomId` to call in, an
+`intent` saying what the user asked for (which decides whether to show the
+lobby, ring, and so on), an optional `config` overriding what the intent
+implies, and an optional `hostBridge` through which Element Call tells the host
+that the user has joined or hung up, that it wants to stay on screen, and so
+on. The host makes its own requests (`join`, `hangUp`, `setDeviceMute`) through
+the handle exposed on `ref`. The full API is documented in the type declarations
+(`component/index.tsx` and `component/host.ts`).
+
+A few things differ from the widget on purpose: the component draws a solid
+background rather than a gradient unless told otherwise, never offers to edit
+the user's profile (the account is the host's), scopes its keyboard shortcuts to
+its own root element so that several instances can share a page, and only shows
+its own post-call and error screens when the host has not supplied a `close()`
+callback; with one, it asks the host to unmount it instead. The
+[global JS controls](./docs/controls.md) on `window` are unchanged and remain
+page-wide, so with several instances on one page they apply to all of them.
+
+The package is not published yet. A host installs it as a git dependency on the
+`component` directory of this repository,
+
+```json
+"@element-hq/element-call-component": "github:element-hq/element-call#main&path:/component"
+```
+
+whose `prepare` script runs the build on install. That build needs pnpm (via
+Corepack) on the host's machine, runs a full `pnpm install` of this repository,
+since it inherits the `--max-old-space-size` setting of
+the app build; the host's pnpm also has to allow it to run at all
+(`allowBuilds` in its `pnpm-workspace.yaml`). Note that `component/` is a pnpm
+project of its own for this reason, so pnpm commands run from inside that
+directory target it rather than the repository; run them from the repository
+root. The host imports the component from
+`@element-hq/element-call-component` and the stylesheet from
+`@element-hq/element-call-component/style.css`, and has to provide `react`,
+`react-dom`, `matrix-js-sdk`, `livekit-client`, `@vector-im/compound-web` and
+`@vector-im/compound-design-tokens` itself, since the bundle leaves them
+external. Compound's stylesheet are the host's to load too: the component shares
+the host's copy of Compound, (required for example for tooltips)
+
+The component is large, and a host will usually load it lazily, only once a
+call is shown. Everything a host needs in order to talk about a call before
+then is also exported
+from `@element-hq/element-call-component/api` (a small entry point that does not
+load the component).
+
+- props and the types they are made of
+- the handle
+- the host bridge
+- `UserIntent`
+- `HeaderStyle`
+- `BackgroundStyle` enums
+- `configurationForIntent`, the defaults each intent implies
+  Import from it wherever a value such as
+  `BackgroundStyle.Solid` is needed on a path that must stay light; the main
+  entry point re-exports all of it too.
+
 ### Backend
 
-A docker compose file `dev-backend-docker-compose.yml` is provided to start the
+A docker compose file `docker-compose-dev.yml` is provided to start the
 whole stack of components which is required for a local development environment
 including federation:
 
@@ -239,18 +357,25 @@ the backend components:
 ```sh
 pnpm backend
 # or for podman-compose:
-# podman-compose -f dev-backend-docker-compose.yml up
+# podman-compose -f docker-compose-dev.yml up
 ```
 
 > [!NOTE]
 > To ensure your local development frontend functions properly, you’ll need to
-> add certificate exceptions in your browser for `https://localhost:3000`,
-> `https://matrix-rtc.m.localhost/livekit/jwt/healthz` and
-> `https://synapse.m.localhost/.well-known/matrix/client`. This can be either
-> done by adding the minimum localhost CA
+> add certificate exceptions in your browser for `https://localhost:3000` and
+> `https://matrix-rtc.m.localhost/livekit/jwt/healthz`. This can be done either
+> by adding the minimum localhost CA
 > ([./backend/dev_tls_local-ca.crt](./backend/dev_tls_local-ca.crt)) to your web
 > browser's trusted certificates or by simply copying and pasting each URL into
 > your browser’s address bar and follow the prompts to add the exception.
+
+### Updating snapshots
+
+To update snapshots used in tests, use Vitest's `-u` flag, e.g.:
+
+```sh
+pnpm test DeveloperSettingsTab -u
+```
 
 ### Playwright tests
 
@@ -264,7 +389,10 @@ running Playwright by following
 
 However the Playwright tests are run, an element-call instance must be running
 on https://localhost:3000 (this is configured in `playwright.config.ts`) - this
-is what will be tested.
+is what will be tested. The tests under `playwright/component` instead drive
+the component harness (`pnpm dev:component`) on https://localhost:3001, which
+Playwright starts as a second web server; it is always a Vite dev server, even
+when the app itself is served from Docker with `USE_DOCKER`.
 
 The local backend environment should be running for the test to work:
 `pnpm backend`
@@ -351,9 +479,19 @@ Usage and other technical details about the project can be found here:
 
 [**Docs**](./docs/README.md)
 
+## GitHub Labels
+
+GitHub labels in this repository are maintained in the [`labels.yml`](.github/labels.yml) file and
+automatically synced to GitHub using the [`sync-labels` workflow](.github/workflows/sync-labels.yml).
+We do this so that we can reuse the labels between repositories.
+
+> [!WARNING]
+> Do not manually edit labels in the GitHub UI. Any manual changes will be overridden by the
+> workflow on its next invocation.
+
 ## 📝 Copyright & License
 
-Copyright 2021-2025 New Vector Ltd
+Copyright 2021-2026 New Vector Ltd
 
 This software is dual-licensed by New Vector Ltd (Element). It can be used
 either:

@@ -11,6 +11,7 @@ import {
   type JSHandle,
   type Page,
   type FrameLocator,
+  type Locator,
 } from "@playwright/test";
 import { type MatrixClient } from "matrix-js-sdk";
 
@@ -21,7 +22,7 @@ const PASSWORD = "foobarbaz1!";
 export const HOST1 = "https://app.m.localhost/#/welcome";
 export const HOST2 = "https://app.othersite.m.localhost/#/welcome";
 
-export type RtcMode = "legacy" | "compat" | "2_0";
+export type RtcMode = "compat" | "2_0";
 
 export class TestHelpers {
   public static async startCallInCurrentRoom(
@@ -73,9 +74,6 @@ export class TestHelpers {
     audioOnly: boolean = false,
     isDM: boolean = false,
   ): Promise<void> {
-    // XXX This using the notification toast to join the room.
-    // Not the button in the header
-
     await page.waitForTimeout(3000);
     const label = isDM
       ? audioOnly
@@ -85,7 +83,9 @@ export class TestHelpers {
     await expect(page.getByText(label)).toBeVisible({
       timeout: 10000,
     });
-    await page.getByRole("button", { name: "Join" }).click({
+    // XXX This using the notification toast to join the room.
+    // Not the buttons in the header or timeline
+    await page.getByRole("alert").getByRole("button", { name: "Join" }).click({
       timeout: 5000,
     });
   }
@@ -160,6 +160,7 @@ export class TestHelpers {
     const expectedToasts = [
       { title: "Failed to load service worker", button: "OK" },
       { title: "Back up your chats", button: "Dismiss" },
+      { title: "Turn on key storage", button: "Dismiss" },
       { title: "Element does not support this browser", button: "Dismiss" },
     ];
 
@@ -189,14 +190,40 @@ export class TestHelpers {
     }
   }
 
+  public static async closeReleaseAnnouncement(
+    page: Page,
+    name: string,
+  ): Promise<void> {
+    try {
+      await page
+        .getByRole("dialog", { name })
+        .getByRole("button", { name: "OK" })
+        .click({ timeout: 2000 });
+    } catch {
+      // Announcement not shown; nothing to do
+    }
+  }
+
+  public static async expandAllSections(page: Page): Promise<void> {
+    try {
+      await page
+        .getByRole("button", { name: "Expand all sections" })
+        .click({ timeout: 2000 });
+    } catch {
+      // Already expanded or button not present
+    }
+  }
+
   public static async createRoom(
     name: string,
     page: Page,
     andInvite: string[] = [],
   ): Promise<void> {
+    await TestHelpers.closeReleaseAnnouncement(page, "Introducing Sections");
+
     await page
       .getByRole("navigation", { name: "Room list" })
-      .getByRole("button", { name: "New conversation" })
+      .getByRole("button", { name: "New", exact: true })
       .click();
 
     await page.getByRole("menuitem", { name: "New Room" }).click({
@@ -237,9 +264,9 @@ export class TestHelpers {
     roomName: string,
     page: Page,
   ): Promise<void> {
-    await page.getByRole("option", { name: roomName }).click({
-      timeout: 10000,
-    });
+    await TestHelpers.closeReleaseAnnouncement(page, "Introducing Sections");
+    await TestHelpers.expandAllSections(page);
+    await TestHelpers.roomListItem(page, roomName).click({ timeout: 10000 });
     await page.getByRole("button", { name: "Accept" }).click({
       timeout: 5000,
     });
@@ -293,9 +320,7 @@ export class TestHelpers {
 
     // Move to Developer tab now
     await iframe.getByRole("tab", { name: "Developer" }).click();
-    if (mode == "legacy") {
-      await iframe.getByText("Legacy: state events").click();
-    } else if (mode == "2_0") {
+    if (mode == "2_0") {
       await iframe.getByText("Matrix 2.0").click();
     } else {
       // compat
@@ -330,6 +355,23 @@ export class TestHelpers {
     }
   }
 
+  public static async expandRoomList(page: Page): Promise<void> {
+    await page
+      .getByRole("separator", { name: "Click or drag to expand" })
+      .click();
+  }
+
+  /**
+   * Locates a room in the room list by its name.
+   *
+   * Matches on the aria-label prefix because the item's role differs between
+   * the flat room list (`option`) and the sectioned room list (`button`), and
+   * the label may carry a suffix such as " invitation.".
+   */
+  public static roomListItem(page: Page, roomName: string): Locator {
+    return page.locator(`[aria-label^="Open room ${roomName}"]`);
+  }
+
   /**
    * Switches to a room in the room list by its name.
    * @param page - The EW page
@@ -339,7 +381,8 @@ export class TestHelpers {
     page: Page,
     roomName: string,
   ): Promise<void> {
-    await page.getByRole("option", { name: `Open room ${roomName}` }).click();
+    await TestHelpers.expandAllSections(page);
+    await TestHelpers.roomListItem(page, roomName).click();
   }
 
   public static async dismissInviteUnknownUserModal(page: Page): Promise<void> {
@@ -368,25 +411,9 @@ export class TestHelpers {
     frame: FrameLocator,
     count: number,
   ): Promise<void> {
-    // XXX we need to be better at our HTML markup and accessibility, it would make
-    // this kind of stuff way easier to test if we could look out for aria attributes.
-    await expect
-      .poll(
-        async () => {
-          return await frame
-            .locator("video")
-            .evaluateAll(
-              (videos: Element[]) =>
-                videos.filter(
-                  (v: Element) =>
-                    window.getComputedStyle(v).display === "block",
-                ).length,
-            );
-        },
-        {
-          timeout: 10000,
-        },
-      )
-      .toBe(count);
+    await expect(frame.locator("video").filter({ visible: true })).toHaveCount(
+      count,
+      { timeout: 10000 },
+    );
   }
 }

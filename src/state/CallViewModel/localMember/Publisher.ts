@@ -29,7 +29,7 @@ import {
   type ProcessorState,
   trackProcessorSync,
 } from "../../../livekit/TrackProcessorContext.tsx";
-import { getUrlParams } from "../../../UrlParams.ts";
+
 import { observeTrackReference$ } from "../../observeTrackReference";
 import { type Connection } from "../remoteMembers/Connection.ts";
 import { ObservableScope } from "../../ObservableScope.ts";
@@ -47,20 +47,6 @@ export class Publisher {
    */
   public shouldPublish = false;
 
-  // The desired mic/camera enabled value our own mute handler
-  // (`observeMuteStates`) is currently applying, or `null` when no handler is
-  // in flight. `onLocalTrackPublished` fires *during* that apply, before the
-  // MuteState observable has committed the new value, so re-reading
-  // `enabled$.value` there is stale: on first unmute it reads the old muted
-  // value and re-mutes the track we are unmuting (the "first unmute does
-  // nothing / mic icon lies" bug). When a handler is in flight we re-apply this
-  // desired value instead of the stale one — this both avoids the re-mute and
-  // preserves the safety-net re-apply for tracks published mid-mute via
-  // `startPublishing` (see Publisher.test.ts "wrongly publish tracks while
-  // muted").
-  private audioMuteHandlerDesired: boolean | null = null;
-  private videoMuteHandlerDesired: boolean | null = null;
-
   private readonly scope = new ObservableScope();
 
   /**
@@ -70,6 +56,8 @@ export class Publisher {
    * @param muteStates - The mute states for audio and video.
    * @param trackerProcessorState$ - The processor state for the video track processor (e.g. background blur).
    * @param logger - The logger to use for logging :D.
+   * @param controlledAudioDevices - Whether the app hosting Element Call
+   *   controls the audio output devices, rather than the browser.
    */
   public constructor(
     private connection: Pick<Connection, "livekitRoom" | "state$">, //setE2EEEnabled,
@@ -77,8 +65,8 @@ export class Publisher {
     private readonly muteStates: MuteStates,
     trackerProcessorState$: Behavior<ProcessorState>,
     private logger: Logger,
+    controlledAudioDevices: boolean,
   ) {
-    const { controlledAudioDevices } = getUrlParams();
     const room = connection.livekitRoom;
 
     room.setE2EEEnabled(room.options.e2ee !== undefined)?.catch((e: Error) => {
@@ -126,32 +114,49 @@ export class Publisher {
     this.logger.info("Local track published", localTrackPublication);
     const lkRoom = this.connection.livekitRoom;
     if (!this.shouldPublish) {
+      this.logger.debug("Not publishing, pausing upstream");
       this.pauseUpstreams(lkRoom, [localTrackPublication.source]).catch((e) => {
         this.logger.error(`Failed to pause upstreams`, e);
       });
     }
-    // also check the mute state and apply it
     if (localTrackPublication.source === Track.Source.Microphone) {
-      // While a handler is in flight, `enabled$.value` hasn't committed yet, so
-      // prefer the value the handler is applying. Falls back to `enabled$.value`
-      // for tracks published outside the handler.
-      const enabled =
-        this.audioMuteHandlerDesired ?? this.muteStates.audio.enabled$.value;
-      lkRoom.localParticipant.setMicrophoneEnabled(enabled).catch((e) => {
-        this.logger.error(
-          `Failed to enable microphone track, enabled:${enabled}`,
-          e,
-        );
-      });
+      const muteState = this.muteStates.audio;
+      // skip this if a sync is in progress: enabled$ still reflects the old
+      // state while the handler is mid-flight, so the handler itself will apply
+      // the correct mute state once it completes.
+      if (!muteState.syncing$.value) {
+        const enabled = muteState.enabled$.value;
+        if (!enabled) {
+          this.logger.info(
+            "Local audio track just published but muted meanwhile, setting enabled to false",
+          );
+          lkRoom.localParticipant.setMicrophoneEnabled(false).catch((e) => {
+            this.logger.error(
+              `Failed to enable microphone track, enabled:${enabled}`,
+              e,
+            );
+          });
+        }
+      }
     } else if (localTrackPublication.source === Track.Source.Camera) {
-      const enabled =
-        this.videoMuteHandlerDesired ?? this.muteStates.video.enabled$.value;
-      lkRoom.localParticipant.setCameraEnabled(enabled).catch((e) => {
-        this.logger.error(
-          `Failed to enable camera track, enabled:${enabled}`,
-          e,
-        );
-      });
+      const muteState = this.muteStates.video;
+      // skip this if a sync is in progress: enabled$ still reflects the old
+      // state while the handler is mid-flight, so the handler itself will apply
+      // the correct mute state once it completes.
+      if (!muteState.syncing$.value) {
+        const enabled = muteState.enabled$.value;
+        if (!enabled) {
+          this.logger.info(
+            "Local video track just published but muted meanwhile, setting enabled to false",
+          );
+          lkRoom.localParticipant.setCameraEnabled(false).catch((e) => {
+            this.logger.error(
+              `Failed to enable camera track, enabled:${enabled}`,
+              e,
+            );
+          });
+        }
+      }
     }
   }
   /**
@@ -388,7 +393,6 @@ export class Publisher {
   private observeMuteStates(): void {
     const lkRoom = this.connection.livekitRoom;
     this.muteStates.audio.setHandler(async (enable) => {
-      this.audioMuteHandlerDesired = enable;
       try {
         this.logger.debug(
           `handler: Setting LiveKit microphone enabled: ${enable}`,
@@ -403,12 +407,9 @@ export class Publisher {
       } catch (e) {
         this.logger.error("Failed to update LiveKit audio input mute state", e);
         return lkRoom.localParticipant.isMicrophoneEnabled;
-      } finally {
-        this.audioMuteHandlerDesired = null;
       }
     });
     this.muteStates.video.setHandler(async (enable) => {
-      this.videoMuteHandlerDesired = enable;
       try {
         this.logger.debug(`handler: Setting LiveKit camera enabled: ${enable}`);
         await lkRoom.localParticipant.setCameraEnabled(enable);
@@ -421,8 +422,6 @@ export class Publisher {
       } catch (e) {
         this.logger.error("Failed to update LiveKit video input mute state", e);
         return lkRoom.localParticipant.isCameraEnabled;
-      } finally {
-        this.videoMuteHandlerDesired = null;
       }
     });
   }

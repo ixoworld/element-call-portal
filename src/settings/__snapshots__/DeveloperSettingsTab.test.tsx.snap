@@ -18,10 +18,16 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     Device ID: DEVICE123
   </p>
   <div
-    class="fieldRow"
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
+  <div
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="field inputField"
+      class="_field_1bd8c0 _inputField_1bd8c0"
     >
       <input
         aria-describedby="_r_1_"
@@ -38,10 +44,10 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     </div>
   </div>
   <div
-    class="fieldRow"
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="field checkboxField"
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
     >
       <input
         aria-describedby="_r_2_"
@@ -52,7 +58,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         for="debugTileLayout"
       >
         <div
-          class="checkbox"
+          class="_checkbox_1bd8c0"
         >
           <svg
             fill="none"
@@ -75,10 +81,10 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     </div>
   </div>
   <div
-    class="fieldRow"
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="field checkboxField"
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
     >
       <input
         aria-describedby="_r_3_"
@@ -89,7 +95,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         for="showConnectionStats"
       >
         <div
-          class="checkbox"
+          class="_checkbox_1bd8c0"
         >
           <svg
             fill="none"
@@ -112,10 +118,10 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     </div>
   </div>
   <div
-    class="fieldRow"
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="field checkboxField"
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
     >
       <input
         aria-describedby="_r_4_"
@@ -126,7 +132,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         for="muteAllAudio"
       >
         <div
-          class="checkbox"
+          class="_checkbox_1bd8c0"
         >
           <svg
             fill="none"
@@ -150,10 +156,10 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
   </div>
    
   <div
-    class="fieldRow"
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="field checkboxField"
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
     >
       <input
         aria-describedby="_r_5_"
@@ -164,7 +170,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         for="alwaysShowIphoneEarpiece"
       >
         <div
-          class="checkbox"
+          class="_checkbox_1bd8c0"
         >
           <svg
             fill="none"
@@ -185,17 +191,53 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         Show iPhone earpiece option on all platforms
       </label>
     </div>
-     
   </div>
-  <form
-    class="_root_19upo_16"
+  <div
+    class="_fieldRow_1bd8c0"
   >
     <div
-      class="_field_19upo_26"
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_6_"
+        id="enableLivekitExtendedLogs"
+        type="checkbox"
+      />
+      <label
+        for="enableLivekitExtendedLogs"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Enable extended livekit logs
+      </label>
+    </div>
+  </div>
+  <form
+    class="_root_1o4d9_17"
+  >
+    <div
+      class="_field_1o4d9_27"
     >
       <label
-        class="_label_19upo_59"
-        for="radix-_r_6_"
+        class="_label_1o4d9_60"
+        for="radix-_r_7_"
       >
         Custom Livekit-url
       </label>
@@ -203,84 +245,50 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         class="_controls_17lij_8"
       >
         <input
-          aria-describedby="radix-_r_7_"
+          aria-describedby="radix-_r_8_"
           class="_control_d83jn_10"
-          id="radix-_r_6_"
+          id="radix-_r_7_"
           name="input"
           title=""
           value=""
         />
       </div>
       <span
-        class="_message_19upo_85 _help-message_19upo_91"
-        id="radix-_r_7_"
+        class="_message_1o4d9_86 _help-message_1o4d9_92"
+        id="radix-_r_8_"
       >
-        Currently, no overwrite is set. Url from well-known or config is used.
+        Currently, no overwrite is set. Url from config is used.
       </span>
     </div>
   </form>
+  <div
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
   <h3
     class="_typography_6v6n8_153 _font-body-lg-semibold_6v6n8_74"
   >
     MatrixRTC mode
   </h3>
   <form
-    class="_root_19upo_16"
+    class="_root_1o4d9_17"
   >
     <div
-      class="_inline-field_19upo_32"
+      class="_inline-field_1o4d9_33"
     >
       <div
-        class="_inline-field-control_19upo_44"
+        class="_inline-field-control_1o4d9_45"
       >
         <div
           class="_container_1ug7n_10"
         >
           <input
-            aria-describedby="radix-_r_9_ radix-_r_b_ radix-_r_d_"
+            aria-describedby="radix-_r_a_ radix-_r_c_"
             checked=""
             class="_input_1ug7n_18"
-            id="radix-_r_8_"
-            name="_r_0_"
-            title=""
-            type="radio"
-            value="legacy"
-          />
-          <div
-            class="_ui_1ug7n_19"
-          />
-        </div>
-      </div>
-      <div
-        class="_inline-field-body_19upo_38"
-      >
-        <label
-          class="_label_19upo_59"
-          for="radix-_r_8_"
-        >
-          Legacy: state events & oldest membership SFU
-        </label>
-        <span
-          class="_message_19upo_85 _help-message_19upo_91"
-          id="radix-_r_9_"
-        >
-          Compatible with old versions of EC that do not support multi SFU
-        </span>
-      </div>
-    </div>
-    <div
-      class="_inline-field_19upo_32"
-    >
-      <div
-        class="_inline-field-control_19upo_44"
-      >
-        <div
-          class="_container_1ug7n_10"
-        >
-          <input
-            aria-describedby="radix-_r_9_ radix-_r_b_ radix-_r_d_"
-            class="_input_1ug7n_18"
-            id="radix-_r_a_"
+            id="radix-_r_9_"
             name="_r_0_"
             title=""
             type="radio"
@@ -292,35 +300,35 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         </div>
       </div>
       <div
-        class="_inline-field-body_19upo_38"
+        class="_inline-field-body_1o4d9_39"
       >
         <label
-          class="_label_19upo_59"
-          for="radix-_r_a_"
+          class="_label_1o4d9_60"
+          for="radix-_r_9_"
         >
           Compatibility: state events & multi SFU
         </label>
         <span
-          class="_message_19upo_85 _help-message_19upo_91"
-          id="radix-_r_b_"
+          class="_message_1o4d9_86 _help-message_1o4d9_92"
+          id="radix-_r_a_"
         >
           Compatible with homeservers that do not support sticky events (but all other EC clients are v0.17.0 or later)
         </span>
       </div>
     </div>
     <div
-      class="_inline-field_19upo_32"
+      class="_inline-field_1o4d9_33"
     >
       <div
-        class="_inline-field-control_19upo_44"
+        class="_inline-field-control_1o4d9_45"
       >
         <div
           class="_container_1ug7n_10"
         >
           <input
-            aria-describedby="radix-_r_9_ radix-_r_b_ radix-_r_d_"
+            aria-describedby="radix-_r_a_ radix-_r_c_"
             class="_input_1ug7n_18"
-            id="radix-_r_c_"
+            id="radix-_r_b_"
             name="_r_0_"
             title=""
             type="radio"
@@ -332,17 +340,17 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
         </div>
       </div>
       <div
-        class="_inline-field-body_19upo_38"
+        class="_inline-field-body_1o4d9_39"
       >
         <label
-          class="_label_19upo_59"
-          for="radix-_r_c_"
+          class="_label_1o4d9_60"
+          for="radix-_r_b_"
         >
           Matrix 2.0: sticky events & multi SFU
         </label>
         <span
-          class="_message_19upo_85 _help-message_19upo_91"
-          id="radix-_r_d_"
+          class="_message_1o4d9_86 _help-message_1o4d9_92"
+          id="radix-_r_c_"
         >
           Compatible only with homservers supporting sticky events and all EC clients v0.17.0 or later
         </span>
@@ -350,7 +358,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     </div>
   </form>
   <div
-    class="livekit_room_box"
+    class="_livekit_room_box_2ddec4"
   >
     <h4>
       LiveKit SFU: wss://local-sfu.example.org
@@ -372,7 +380,9 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
       local
       )
     </p>
-    <pre>
+    <pre
+      class="_pre_2ddec4"
+    >
       {
   "region": "local",
   "version": "1.2.3"
@@ -382,7 +392,9 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     <p>
       Local Participant
     </p>
-    <pre>
+    <pre
+      class="_pre_2ddec4"
+    >
       localParticipantIdentity
     </pre>
     <p>
@@ -391,7 +403,7 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     <ul />
   </div>
   <div
-    class="livekit_room_box"
+    class="_livekit_room_box_2ddec4"
   >
     <h4>
       LiveKit SFU: wss://remote-sfu.example.org
@@ -409,7 +421,9 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
       remote
       )
     </p>
-    <pre>
+    <pre
+      class="_pre_2ddec4"
+    >
       {
   "region": "remote",
   "version": "4.5.6"
@@ -419,7 +433,9 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     <p>
       Local Participant
     </p>
-    <pre>
+    <pre
+      class="_pre_2ddec4"
+    >
       localParticipantIdentity
     </pre>
     <p>
@@ -427,10 +443,248 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     </p>
     <ul />
   </div>
+  <div
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
+  <h4>
+    Camera quality
+  </h4>
+  <div
+    class="_fieldRow_1bd8c0"
+  >
+    <div
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_i_"
+        id="cameraToggle"
+        type="checkbox"
+      />
+      <label
+        for="cameraToggle"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Advanced camera settings
+      </label>
+      <p
+        class="_description_1bd8c0"
+        id="_r_i_"
+      >
+        Configure resolution, framerate, bitrate, and codec for camera video. Changes apply on next call join.
+      </p>
+    </div>
+  </div>
+  <div
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
+  <h4>
+    Screen sharing
+  </h4>
+  <div
+    class="_fieldRow_1bd8c0"
+  >
+    <div
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_j_"
+        id="screenShareToggle"
+        type="checkbox"
+      />
+      <label
+        for="screenShareToggle"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Advanced screen share settings
+      </label>
+      <p
+        class="_description_1bd8c0"
+        id="_r_j_"
+      >
+        Configure resolution, framerate, bitrate, and codec for screen sharing
+      </p>
+    </div>
+  </div>
+  <div
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
+  <h4>
+    Audio processing
+  </h4>
+  <p>
+    Changes apply on next call join.
+  </p>
+  <div
+    class="_fieldRow_1bd8c0"
+  >
+    <div
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_k_"
+        checked=""
+        id="echoCancellation"
+        type="checkbox"
+      />
+      <label
+        for="echoCancellation"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Echo cancellation
+      </label>
+    </div>
+  </div>
+  <div
+    class="_fieldRow_1bd8c0"
+  >
+    <div
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_l_"
+        checked=""
+        id="noiseSuppression"
+        type="checkbox"
+      />
+      <label
+        for="noiseSuppression"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Noise suppression
+      </label>
+    </div>
+  </div>
+  <div
+    class="_fieldRow_1bd8c0"
+  >
+    <div
+      class="_field_1bd8c0 _checkboxField_1bd8c0"
+    >
+      <input
+        aria-describedby="_r_m_"
+        checked=""
+        id="autoGainControl"
+        type="checkbox"
+      />
+      <label
+        for="autoGainControl"
+      >
+        <div
+          class="_checkbox_1bd8c0"
+        >
+          <svg
+            fill="none"
+            height="24"
+            stroke="#000"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="m20 6-11 11-5-5"
+            />
+          </svg>
+        </div>
+        Automatic gain control
+      </label>
+    </div>
+  </div>
+  <div
+    class="_separator_13qwf_8"
+    data-kind="primary"
+    data-orientation="horizontal"
+    role="separator"
+  />
   <p>
     Environment variables
   </p>
-  <pre>
+  <pre
+    class="_pre_2ddec4"
+  >
     {
   "MY_MOCK_ENV": 10,
   "ENV": "test"
@@ -439,7 +693,9 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
   <p>
     URL parameters
   </p>
-  <pre>
+  <pre
+    class="_pre_2ddec4"
+  >
     {
   "mocked": true,
   "answer": 42

@@ -56,7 +56,7 @@ import {
 import { type Behavior, constant } from "../Behavior";
 import { type ProcessorState } from "../../livekit/TrackProcessorContext";
 import { type MediaDevices } from "../MediaDevices";
-import { type MatrixRTCMode } from "../../settings/settings";
+import { type MatrixRTCMode } from "../../config/ConfigOptions";
 
 mockConfig({
   livekit: { livekit_service_url: "http://my-default-service-url.com" },
@@ -138,9 +138,6 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         public getSyncState(): SyncState {
           return syncState;
         }
-        public getAccessToken(): string | null {
-          return "a-token";
-        }
       })() as Partial<MatrixClient> as MatrixClient,
       getMembers: () => roomMembers,
       getMembersWithMembership: () => roomMembers,
@@ -213,11 +210,8 @@ export function withCallViewModel(mode: MatrixRTCMode) {
         connectionState$,
         windowSize$,
         localTransport: {
-          active$: constant({
-            transport: exampleTransport,
-            sfuConfig: exampleSfuConfig,
-          }),
-          advertised$: constant(exampleTransport),
+          transport: exampleTransport,
+          sfuConfig: exampleSfuConfig,
         },
         connectionFactory: {
           createConnection(
@@ -241,7 +235,7 @@ export function withCallViewModel(mode: MatrixRTCMode) {
             );
           },
         },
-        matrixRTCMode$: constant(mode),
+        matrixRTCMode: mode,
         ...options,
       },
       raisedHands$,

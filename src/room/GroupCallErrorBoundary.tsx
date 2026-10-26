@@ -23,6 +23,7 @@ import {
 } from "@vector-im/compound-design-tokens/assets/web/icons";
 import { Button } from "@vector-im/compound-web";
 import { logger } from "matrix-js-sdk/lib/logger";
+import { MatrixError } from "matrix-js-sdk";
 
 import {
   ConnectionLostError,
@@ -33,7 +34,7 @@ import {
 } from "../utils/errors.ts";
 import { FullScreenView } from "../FullScreenView.tsx";
 import { ErrorView } from "../ErrorView.tsx";
-import { type WidgetHelpers } from "../widget.ts";
+import styles from "../ErrorView.module.css";
 
 export type CallErrorRecoveryAction = "reconnect"; // | "retry" ;
 
@@ -45,13 +46,11 @@ interface ErrorPageProps {
   error: ElementCallError;
   recoveryActionHandler: RecoveryActionHandler;
   resetError: () => void;
-  widget: WidgetHelpers | null;
 }
 
 const ErrorPage: FC<ErrorPageProps> = ({
   error,
   recoveryActionHandler,
-  widget,
 }: ErrorPageProps): ReactElement => {
   const { t } = useTranslation();
   logger.error("Error boundary caught:", error);
@@ -78,16 +77,37 @@ const ErrorPage: FC<ErrorPageProps> = ({
     });
   }
 
+  const technicalError =
+    error.cause instanceof MatrixError ? error.cause : null;
+
   return (
     <FullScreenView>
       <ErrorView
         Icon={icon}
         title={error.localisedTitle}
         rageshake={error.code == ErrorCode.UNKNOWN_ERROR}
-        widget={widget}
       >
         <p>
-          {error.localisedMessage ?? (
+          {error.localisedMessageKey ? (
+            <Trans
+              // @ts-expect-error - Dynamic i18nKey from error object
+              i18nKey={error.localisedMessageKey}
+              values={error.localisedMessageValues}
+              components={[
+                <a
+                  href={String(error.localisedMessageValues?.linkUrl || "#")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {/* Content injected by Trans component */}
+                </a>,
+                <b />,
+                <code />,
+              ]}
+            />
+          ) : error.localisedMessage ? (
+            error.localisedMessage
+          ) : (
             <Trans
               i18nKey="error.unexpected_ec_error"
               components={[<b />, <code />]}
@@ -95,6 +115,16 @@ const ErrorPage: FC<ErrorPageProps> = ({
             />
           )}
         </p>
+        {technicalError ? (
+          <details className={styles.technicalDetails}>
+            <summary className={styles.technicalDetailsSummary}>
+              {t("technical_details")}
+            </summary>
+            <pre className={styles.technicalDetailsPre}>
+              {technicalError.message}
+            </pre>
+          </details>
+        ) : null}
         {actions &&
           actions.map((action, index) => (
             <Button
@@ -114,14 +144,12 @@ interface BoundaryProps {
   children: ReactNode | (() => ReactNode);
   recoveryActionHandler: RecoveryActionHandler;
   onError?: (error: unknown) => void;
-  widget: WidgetHelpers | null;
 }
 
 export const GroupCallErrorBoundary = ({
   recoveryActionHandler,
   onError,
   children,
-  widget,
 }: BoundaryProps): ReactElement => {
   const fallbackRenderer: FallbackRender = useCallback(
     ({ error, resetError }): ReactElement => {
@@ -131,7 +159,6 @@ export const GroupCallErrorBoundary = ({
           : new UnknownCallError(error instanceof Error ? error : new Error());
       return (
         <ErrorPage
-          widget={widget ?? null}
           error={callError}
           resetError={resetError}
           recoveryActionHandler={async (action: CallErrorRecoveryAction) => {
@@ -141,7 +168,7 @@ export const GroupCallErrorBoundary = ({
         />
       );
     },
-    [recoveryActionHandler, widget],
+    [recoveryActionHandler],
   );
 
   return (

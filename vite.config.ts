@@ -7,7 +7,7 @@ Please see LICENSE in the repository root for full details.
 
 import {
   loadEnv,
-  PluginOption,
+  type PluginOption,
   searchForWorkspaceRoot,
   type ConfigEnv,
   type UserConfig,
@@ -19,16 +19,27 @@ import { codecovVitePlugin } from "@codecov/vite-plugin";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import wasm from "vite-plugin-wasm";
-
-import react from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { realpathSync } from "fs";
 import * as fs from "node:fs";
 
 export const vitePluginsConfig = ({
   mode,
-}: Pick<ConfigEnv, "mode">): UserConfig => {
+  html = true,
+}: Pick<ConfigEnv, "mode"> & {
+  /**
+   * Whether to inject Element Call's entry point into the HTML page. Builds
+   * that produce a library, or serve a page of their own, must not have this:
+   * it would pull the standalone app in alongside whatever they are building.
+   */
+  html?: boolean;
+}): UserConfig => {
   const env = loadEnv(mode, process.cwd());
   const plugins: PluginOption[] = [
+    babel({
+      presets: [reactCompilerPreset()],
+    }),
     react(),
     wasm(),
     nodePolyfills({
@@ -64,7 +75,7 @@ export const vitePluginsConfig = ({
     );
   }
 
-  if (!process.env.STORYBOOK && !process.env.VITEST) {
+  if (html && !process.env.STORYBOOK && !process.env.VITEST) {
     plugins.push(
       createHtmlPlugin({
         entry: "src/main.tsx",
@@ -110,6 +121,7 @@ export default ({
   return {
     ...vitePluginsConfig({ mode }),
     server: {
+      host: true,
       port: 3000,
       fs: { allow },
       https: {

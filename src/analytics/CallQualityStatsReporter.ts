@@ -16,8 +16,6 @@ import { logger as rootLogger } from "matrix-js-sdk/lib/logger";
 import { PosthogAnalytics } from "./PosthogAnalytics";
 import { type CallQualityStatsPayload } from "./PosthogEvents";
 
-const logger = rootLogger.getChild("[CallQualityStatsReporter]");
-
 /**
  * How often we poll `getStats()` on each track. This is cheap and local; it
  * never results in a network request. Deltas between polls are used to derive
@@ -303,6 +301,7 @@ export interface SampledRoom {
  *  - local CPU limits (`sendLimitedByCpuPct`).
  */
 export class CallQualityStatsReporter {
+  private readonly logger = rootLogger.getChild("[CallQualityStatsReporter]");
   private readonly sampleIntervalMs: number;
   private readonly flushIntervalMs: number;
   private rooms: SampledRoom[] = [];
@@ -343,7 +342,7 @@ export class CallQualityStatsReporter {
       void this.sample();
     }, this.sampleIntervalMs);
     this.flushTimer = setInterval(() => this.flush(), this.flushIntervalMs);
-    logger.info(`Started call quality stats reporter for ${this.callId}`);
+    this.logger.info(`Started call quality stats reporter for ${this.callId}`);
   }
 
   public stop(): void {
@@ -362,7 +361,7 @@ export class CallQualityStatsReporter {
       );
     }
     this.prev.clear();
-    logger.info(`Stopped call quality stats reporter for ${this.callId}`);
+    this.logger.info(`Stopped call quality stats reporter for ${this.callId}`);
   }
 
   private forEachAcc(fn: (a: Accumulator) => void): void {
@@ -401,7 +400,9 @@ export class CallQualityStatsReporter {
         // Remote (inbound) tracks + subscriber-side transport.
         for (const participant of room.remoteParticipants.values()) {
           remoteParticipants++;
-          this.forEachAcc((a) => a.addConnQuality(participant.connectionQuality));
+          this.forEachAcc((a) =>
+            a.addConnQuality(participant.connectionQuality),
+          );
           for (const pub of participant.getTrackPublications()) {
             const track = pub.track as RemoteTrack | undefined;
             await this.sampleTrack(
@@ -418,7 +419,7 @@ export class CallQualityStatsReporter {
           a.maxRemoteParticipants = remoteParticipants;
       });
     } catch (e) {
-      logger.warn("Failed to sample call quality stats", e);
+      this.logger.warn("Failed to sample call quality stats", e);
     } finally {
       this.sampling = false;
     }
@@ -523,7 +524,8 @@ export class CallQualityStatsReporter {
     >;
     const cpuSec = num(durations, "cpu") ?? 0;
     const bandwidthSec = num(durations, "bandwidth") ?? 0;
-    const otherSec = (num(durations, "other") ?? 0) + (num(durations, "none") ?? 0);
+    const otherSec =
+      (num(durations, "other") ?? 0) + (num(durations, "none") ?? 0);
     const prev = this.prev.get(key);
     this.prev.set(key, {
       bytes,

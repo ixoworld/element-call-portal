@@ -63,6 +63,7 @@ function createMockLocalTrack(source: Track.Source): LocalTrack {
 
 function createMockMuteState(enabled$: BehaviorSubject<boolean>): {
   enabled$: BehaviorSubject<boolean>;
+  syncing$: BehaviorSubject<boolean>;
   setHandler: (h: (enabled: boolean) => void) => void;
   unsetHandler: () => void;
 } {
@@ -70,6 +71,7 @@ function createMockMuteState(enabled$: BehaviorSubject<boolean>): {
 
   const ms = {
     enabled$,
+    syncing$: new BehaviorSubject(false),
     setHandler: vi.fn().mockImplementation((h: (enabled: boolean) => void) => {
       currentHandler = h;
     }),
@@ -132,6 +134,7 @@ beforeEach(() => {
     new Map(),
     {},
     {},
+    {},
   );
 
   vi.mocked(localParticipant).createTracks = vi
@@ -189,6 +192,7 @@ describe("Publisher", () => {
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
+      false,
     );
   });
 
@@ -306,6 +310,7 @@ describe("Publisher", () => {
         muteStates,
         constant({ supported: false, processor: undefined }),
         logger,
+        false,
       );
     });
     afterEach(async () => {
@@ -361,6 +366,7 @@ describe("Bug fix", () => {
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
+      false,
     );
     audioEnabled$.next(true);
 
@@ -408,6 +414,7 @@ describe("Bug fix", () => {
       muteStates,
       constant({ supported: false, processor: undefined }),
       logger,
+      false,
     );
 
     // Join muted: audio stays disabled, so no mic track is created yet.
@@ -426,8 +433,13 @@ describe("Bug fix", () => {
     ).mock.calls[0][0];
     expect(audioEnabled$.value).toBe(false);
 
+    // The real MuteState raises syncing$ before it calls the handler and
+    // lowers it once the new value is committed.
+    const audioSyncing$ = muteStates.audio.syncing$ as BehaviorSubject<boolean>;
+    audioSyncing$.next(true);
     await audioHandler(true);
     await flushPromises();
+    audioSyncing$.next(false);
 
     const track = localParticipant.getTrackPublication(
       Track.Source.Microphone,

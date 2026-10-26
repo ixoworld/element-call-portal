@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { test, vi, onTestFinished, it, describe } from "vitest";
+import { test, vi, onTestFinished, it, describe, expect } from "vitest";
 import {
   BehaviorSubject,
   combineLatest,
@@ -22,6 +22,7 @@ import { SyncState } from "matrix-js-sdk";
 import {
   ConnectionState,
   type LocalTrackPublication,
+  type Participant,
   type RemoteParticipant,
 } from "livekit-client";
 import * as ComponentsCore from "@livekit/components-core";
@@ -65,8 +66,10 @@ import {
   localParticipant,
   withCallViewModel as withCallViewModelInMode,
 } from "./CallViewModelTestUtils.ts";
-import { MatrixRTCMode } from "../../settings/settings.ts";
+import { MatrixRTCMode } from "../../config/ConfigOptions.ts";
 import { initializeWidget } from "../../widget.ts";
+import { computeUrlParams } from "../../UrlParams.ts";
+import { callViewModelOptionsFromParams } from "./CallViewModel.ts";
 
 initializeWidget();
 
@@ -81,9 +84,6 @@ vi.mock("@livekit/components-core");
 vi.mock("livekit-client/e2ee-worker?worker");
 
 vi.mock("../e2ee/matrixKeyProvider");
-
-const getUrlParams = vi.hoisted(() => vi.fn(() => ({})));
-vi.mock("../UrlParams", () => ({ getUrlParams }));
 
 const getPlatform = vi.hoisted(() => vi.fn(() => "desktop"));
 vi.mock("../../Platform", () => ({
@@ -143,13 +143,13 @@ export interface SpotlightExpandedLayoutSummary {
 }
 
 export interface OneOnOneLandscapeLayoutSummary {
-  type: "one-on-one-landscape";
+  type: "one-on-one-desktop";
   spotlight: string;
   pip: string;
 }
 
 export interface OneOnOnePortraitLayoutSummary {
-  type: "one-on-one-portrait";
+  type: "one-on-one-mobile";
   spotlight: string[];
   pip?: string;
   pipSize: "sm" | "lg";
@@ -204,7 +204,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
               pip: pip?.id,
             }),
           );
-        case "one-on-one-landscape":
+        case "one-on-one-desktop":
           return combineLatest(
             [l.spotlight.media$, l.pip.media$],
             (spotlight, pip) => ({
@@ -213,7 +213,7 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
               pip: pip.id,
             }),
           );
-        case "one-on-one-portrait":
+        case "one-on-one-mobile":
           return combineLatest(
             [
               l.spotlight.media$,
@@ -257,11 +257,9 @@ function mockRingEvent(
   } as unknown as { event_id: string } & IRTCNotificationContent;
 }
 
-describe.each([
-  [MatrixRTCMode.Legacy],
-  [MatrixRTCMode.Compatibility],
-  [MatrixRTCMode.Matrix_2_0],
-])("CallViewModel (%s mode)", (mode) => {
+const modes = [[MatrixRTCMode.Compatibility], [MatrixRTCMode.Matrix_2_0]];
+
+describe.each(modes)("CallViewModel (%s mode)", (mode) => {
   const withCallViewModel = withCallViewModelInMode(mode);
 
   test("participants are retained during a focus switch", () => {
@@ -326,8 +324,8 @@ describe.each([
         },
         (vm) => {
           schedule(modeInputMarbles, {
-            s: () => vm.setGridMode("spotlight"),
-            g: () => vm.setGridMode("grid"),
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
+            g: () => vm.layoutSwitchVm$.value!.setLayout("grid"),
           });
 
           expectObservable(summarizeLayout$(vm.layout$)).toBe(
@@ -436,7 +434,7 @@ describe.each([
             expectedLayoutMarbles,
             {
               a: {
-                type: "one-on-one-landscape",
+                type: "one-on-one-desktop",
                 pip: `${localId}:0`,
                 spotlight: `${aliceId}:0`,
               },
@@ -452,7 +450,7 @@ describe.each([
     });
   });
 
-  test("one-on-one portrait layout shows local tile when video is enabled", () => {
+  test("one-on-one mobile layout shows local tile when video is enabled", () => {
     withTestScheduler(({ behavior, schedule, expectObservable }) => {
       // Local participant enables their video, then disables it
       const videoInputMarbles = "    ny--n";
@@ -479,19 +477,19 @@ describe.each([
             expectedLayoutMarbles,
             {
               a: {
-                type: "one-on-one-portrait",
+                type: "one-on-one-mobile",
                 spotlight: [`${aliceId}:0`],
                 pip: undefined,
                 pipSize: "lg",
               },
               b: {
-                type: "one-on-one-portrait",
+                type: "one-on-one-mobile",
                 spotlight: [`${aliceId}:0`],
                 pip: `${localId}:0`,
                 pipSize: "lg",
               },
               c: {
-                type: "one-on-one-portrait",
+                type: "one-on-one-mobile",
                 spotlight: [`${aliceId}:0`],
                 pip: `${localId}:0`,
                 pipSize: "sm",
@@ -503,21 +501,21 @@ describe.each([
     });
   });
 
-  test("one-on-one portrait layout shows name tags in room with 3 members", () => {
-    withTestScheduler(({ behavior, schedule, expectObservable }) => {
+  test("one-on-one mobile layout shows name tags in room with 3 members", () => {
+    withTestScheduler(({ expectObservable }) => {
       withCallViewModel(
         {
           remoteParticipants$: constant([aliceParticipant]),
           // Both Alice and Bob are with us in the room
           roomMembers: [local, alice, bob],
           rtcMembers$: constant([localRtcMember, aliceRtcMember]),
-          windowSize$: constant({ width: 380, height: 700 }), // Mobile phone in portrait
+          windowSize$: constant({ width: 380, height: 700 }), // Mobile phone
         },
         (vm) => {
-          // Uses one-on-one portrait layout
+          // Uses one-on-one mobile layout
           expectObservable(summarizeLayout$(vm.layout$)).toBe("a", {
             a: {
-              type: "one-on-one-portrait",
+              type: "one-on-one-mobile",
               spotlight: [`${aliceId}:0`],
               pip: undefined,
               pipSize: "lg",
@@ -526,6 +524,65 @@ describe.each([
           // It wouldn't be clear whether Alice or Bob is the remote video tile,
           // so the interface must put a name tag on it
           expectObservable(vm.showNameTags$).toBe("y", yesNo);
+        },
+      );
+    });
+  });
+
+  test("landscape mobile layouts show screen shares and group call participants", () => {
+    withTestScheduler(({ behavior, expectObservable }) => {
+      // Starts as a one-on-one call, then Alice shares her screen, then Bob
+      // joins, and finally Alice stops sharing her screen
+      const participantInputMarbles = "    a--b";
+      const aliceSharingInputMarbles = "   ny-n";
+      // Starts in one-on-one mobile layout, then goes to spotlight layout for
+      // the screen sharing and group call cases
+      const expectedLayoutMarbles = "      ab-c";
+      // Whether the layout switch is visible. It should be hidden while in
+      // one-on-one layout.
+      const expectedLayoutSwitchMarbles = "ny--";
+
+      withCallViewModel(
+        {
+          remoteParticipants$: behavior(participantInputMarbles, {
+            a: [aliceParticipant],
+            b: [aliceParticipant, bobParticipant],
+          }),
+          roomMembers: [local, alice, bob],
+          rtcMembers$: behavior(participantInputMarbles, {
+            a: [localRtcMember, aliceRtcMember],
+            b: [localRtcMember, aliceRtcMember, bobRtcMember],
+          }),
+          sharingScreen: new Map([
+            [aliceParticipant, behavior(aliceSharingInputMarbles, yesNo)],
+          ]),
+          windowSize$: constant({ width: 700, height: 380 }), // Mobile phone in landscape
+        },
+        (vm) => {
+          expectObservable(summarizeLayout$(vm.layout$)).toBe(
+            expectedLayoutMarbles,
+            {
+              a: {
+                type: "one-on-one-mobile",
+                spotlight: [`${aliceId}:0`],
+                pip: undefined,
+                pipSize: "sm",
+              },
+              b: {
+                type: "spotlight-landscape",
+                spotlight: [`${aliceId}:0:screen-share`],
+                grid: [`${localId}:0`, `${aliceId}:0`],
+              },
+              c: {
+                type: "spotlight-landscape",
+                spotlight: [`${aliceId}:0`],
+                grid: [`${localId}:0`, `${bobId}:0`],
+              },
+            },
+          );
+          expectObservable(
+            vm.layoutSwitchVm$.pipe(map((vm) => vm !== null)),
+          ).toBe(expectedLayoutSwitchMarbles, yesNo);
         },
       );
     });
@@ -705,14 +762,14 @@ describe.each([
             {
               a: {
                 // This is the expected one-on-one layout for a narrow window
-                type: "one-on-one-portrait",
+                type: "one-on-one-mobile",
                 spotlight: [`${aliceId}:0`],
                 pip: undefined,
                 pipSize: "lg",
               },
               b: {
-                // In a larger window, expect the normal one-on-one layout
-                type: "one-on-one-landscape",
+                // In a larger window, expect the one-on-one desktop layout
+                type: "one-on-one-desktop",
                 pip: `${localId}:0`,
                 spotlight: `${aliceId}:0`,
               },
@@ -762,7 +819,9 @@ describe.each([
           ]),
         },
         (vm) => {
-          schedule(modeInputMarbles, { s: () => vm.setGridMode("spotlight") });
+          schedule(modeInputMarbles, {
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
+          });
 
           expectObservable(summarizeLayout$(vm.layout$)).toBe(
             expectedLayoutMarbles,
@@ -899,6 +958,41 @@ describe.each([
     },
   );
 
+  // TODO add media to lk mocks
+  test("onPipMediaOrientationUpdate is called with the spotlight media orientation", () => {
+    // Set the spy before creating the view model so the initial call is captured
+    const onPipMediaOrientationUpdate = vi.fn();
+    window.controls.onPipMediaOrientationUpdate = onPipMediaOrientationUpdate;
+    onTestFinished(() => {
+      window.controls.onPipMediaOrientationUpdate = undefined;
+    });
+
+    withTestScheduler(({ behavior }) => {
+      // Alice starts as a regular participant, then shares her screen, then stops
+      const aliceSharingInputMarbles = "nyn";
+
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant]),
+          rtcMembers$: constant([localRtcMember, aliceRtcMember]),
+          sharingScreen: new Map([
+            [aliceParticipant, behavior(aliceSharingInputMarbles, yesNo)],
+          ]),
+        },
+        () => {},
+      );
+    });
+
+    // Should be called exactly 3 times:
+    // 1. Initially with "portrait" (Alice is in spotlight as a user, default portrait orientation)
+    // 2. With "landscape" when Alice starts screen sharing (screen shares always use landscape)
+    // 3. With "portrait" again when Alice stops screen sharing and returns to user tile
+    expect(onPipMediaOrientationUpdate).toHaveBeenCalledTimes(3);
+    expect(onPipMediaOrientationUpdate).toHaveBeenNthCalledWith(1, "portrait");
+    expect(onPipMediaOrientationUpdate).toHaveBeenNthCalledWith(2, "landscape");
+    expect(onPipMediaOrientationUpdate).toHaveBeenNthCalledWith(3, "portrait");
+  });
+
   test("PiP tile in expanded spotlight layout switches speakers without layout shifts", () => {
     withTestScheduler(({ behavior, schedule, expectObservable }) => {
       // Switch to spotlight immediately
@@ -933,7 +1027,7 @@ describe.each([
         },
         (vm) => {
           schedule(modeInputMarbles, {
-            s: () => vm.setGridMode("spotlight"),
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
           });
           schedule(expandInputMarbles, {
             a: () => vm.toggleSpotlightExpanded$.value!(),
@@ -996,10 +1090,14 @@ describe.each([
             a: [localRtcMember],
             b: [localRtcMember, aliceRtcMember],
           }),
+          videoEnabled: new Map<Participant, Behavior<boolean>>([
+            [localParticipant, constant(true)],
+            [aliceParticipant, constant(true)],
+          ]),
         },
         (vm) => {
           schedule(modeInputMarbles, {
-            s: () => vm.setGridMode("spotlight"),
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
           });
           schedule(expandInputMarbles, {
             a: () => vm.toggleSpotlightExpanded$.value!(),
@@ -1025,6 +1123,39 @@ describe.each([
     });
   });
 
+  test("expanded spotlight layout hides PiP tile in one-on-one voice call", () => {
+    withTestScheduler(({ schedule, expectObservable }) => {
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant]),
+          roomMembers: [local, alice],
+          rtcMembers$: constant([localRtcMember, aliceRtcMember]),
+          videoEnabled: new Map<Participant, Behavior<boolean>>([
+            [localParticipant, constant(false)],
+            [aliceParticipant, constant(false)],
+          ]),
+        },
+        (vm) => {
+          schedule("s", {
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
+          });
+          schedule("a", {
+            a: () => vm.toggleSpotlightExpanded$.value!(),
+          });
+
+          // Layout should show remote tile only
+          expectObservable(summarizeLayout$(vm.layout$)).toBe("a", {
+            a: {
+              type: "spotlight-expanded",
+              spotlight: [`${aliceId}:0`],
+              pip: undefined,
+            },
+          });
+        },
+      );
+    });
+  });
+
   test("spotlight remembers whether it's expanded", () => {
     withTestScheduler(({ schedule, expectObservable }) => {
       // Start in spotlight mode, then switch to grid and back to spotlight a
@@ -1043,8 +1174,8 @@ describe.each([
         },
         (vm) => {
           schedule(modeInputMarbles, {
-            s: () => vm.setGridMode("spotlight"),
-            g: () => vm.setGridMode("grid"),
+            s: () => vm.layoutSwitchVm$.value!.setLayout("spotlight"),
+            g: () => vm.layoutSwitchVm$.value!.setLayout("grid"),
           });
           schedule(expandInputMarbles, {
             a: () => vm.toggleSpotlightExpanded$.value!(),
@@ -1061,7 +1192,7 @@ describe.each([
               b: {
                 type: "spotlight-expanded",
                 spotlight: [`${aliceId}:0`],
-                pip: `${localId}:0`,
+                pip: undefined,
               },
               c: {
                 type: "grid",
@@ -1110,7 +1241,7 @@ describe.each([
           ]),
         },
         (vm) => {
-          vm.setGridMode("grid");
+          vm.layoutSwitchVm$.value!.setLayout("grid");
           expectObservable(summarizeLayout$(vm.layout$)).toBe(
             expectedLayoutMarbles,
             {
@@ -1120,7 +1251,7 @@ describe.each([
                 grid: [`${localId}:0`],
               },
               b: {
-                type: "one-on-one-landscape",
+                type: "one-on-one-desktop",
                 pip: `${localId}:0`,
                 spotlight: `${aliceId}:0`,
               },
@@ -1153,7 +1284,7 @@ describe.each([
           }),
         },
         (vm) => {
-          vm.setGridMode("grid");
+          vm.layoutSwitchVm$.value!.setLayout("grid");
           expectObservable(summarizeLayout$(vm.layout$)).toBe(
             expectedLayoutMarbles,
             {
@@ -1163,7 +1294,7 @@ describe.each([
                 grid: [`${localId}:0`],
               },
               b: {
-                type: "one-on-one-landscape",
+                type: "one-on-one-desktop",
                 pip: `${localId}:0`,
                 spotlight: `${aliceId}:0`,
               },
@@ -1173,7 +1304,7 @@ describe.each([
                 grid: [`${localId}:0`, `${aliceId}:0`, `${daveId}:0`],
               },
               d: {
-                type: "one-on-one-landscape",
+                type: "one-on-one-desktop",
                 pip: `${localId}:0`,
                 spotlight: `${daveId}:0`,
               },
@@ -1385,13 +1516,19 @@ describe.each([
             },
           });
 
-          // Should ring for 30ms and then time out
-          expectObservable(vm.ringing$).toBe("(ny) 26ms n", yesNo);
+          expectObservable(vm.ringingVm$).toBe("(ab)", {
+            a: null,
+            b: expect.objectContaining({
+              type: "ringing",
+              userId: alice.userId,
+              intent: "audio",
+            }),
+          });
           // Layout should show placeholder media for the participant we're
           // ringing the entire time (even once timed out)
           expectObservable(summarizeLayout$(vm.layout$)).toBe("a", {
             a: {
-              type: "one-on-one-landscape",
+              type: "one-on-one-desktop",
               spotlight: `${localId}:0`,
               pip: `ringing:${aliceUserId}`,
             },
@@ -1425,17 +1562,24 @@ describe.each([
           });
 
           // Should ring until Alice joins
-          expectObservable(vm.ringing$).toBe("(ny) 17ms n", yesNo);
+          expectObservable(vm.ringingVm$).toBe("(ab) 17ms a", {
+            a: null,
+            b: expect.objectContaining({
+              type: "ringing",
+              userId: alice.userId,
+              intent: "audio",
+            }),
+          });
           // Layout should show placeholder media for the participant we're
           // ringing the entire time
           expectObservable(summarizeLayout$(vm.layout$)).toBe("a 20ms b", {
             a: {
-              type: "one-on-one-landscape",
+              type: "one-on-one-desktop",
               spotlight: `${localId}:0`,
               pip: `ringing:${aliceUserId}`,
             },
             b: {
-              type: "one-on-one-landscape",
+              type: "one-on-one-desktop",
               spotlight: `${aliceId}:0`,
               pip: `${localId}:0`,
             },
@@ -1448,12 +1592,13 @@ describe.each([
 
   it.skip("audio output changes when toggling earpiece mode", () => {
     withTestScheduler(({ schedule, expectObservable }) => {
-      getUrlParams.mockReturnValue({ controlledAudioDevices: true });
       vi.mocked(ComponentsCore.createMediaDeviceObserver).mockReturnValue(
         of([]),
       );
 
-      const devices = new MediaDevices(testScope());
+      const devices = new MediaDevices(testScope(), {
+        controlledAudioDevices: true,
+      });
 
       window.controls.setAvailableAudioDevices([
         { id: "speaker", name: "Speaker", isSpeaker: true },
@@ -1552,6 +1697,45 @@ describe.each([
           );
         },
       );
+    });
+  });
+});
+
+describe("callViewModelOptionsFromParams", () => {
+  // The defaults on CallViewModelOptions describe a standalone Element Call, so
+  // a widget caller that drops one of these gets standalone behaviour rather
+  // than an error. These check the whole chain from URL to options, which is
+  // where that went wrong for the SDK.
+  const widgetUrl = (extra: string): string =>
+    `#?widgetId=id&parentUrl=${encodeURIComponent("http://parent")}&${extra}`;
+
+  it("carries an explicitly requested notification type", () => {
+    const params = computeUrlParams("", widgetUrl("sendNotificationType=ring"));
+    expect(callViewModelOptionsFromParams(params).sendNotificationType).toBe(
+      "ring",
+    );
+  });
+
+  it("carries the notification type an intent implies", () => {
+    const params = computeUrlParams("", widgetUrl("intent=start_call_dm"));
+    expect(callViewModelOptionsFromParams(params).sendNotificationType).toBe(
+      "ring",
+    );
+  });
+
+  it("carries hideScreensharing", () => {
+    const params = computeUrlParams("", widgetUrl("hideScreensharing=true"));
+    expect(callViewModelOptionsFromParams(params).hideScreensharing).toBe(true);
+  });
+
+  it("carries controlledAudioDevices and the call intent", () => {
+    const params = computeUrlParams(
+      "",
+      widgetUrl("controlledAudioDevices=true&intent=start_call_voice"),
+    );
+    expect(callViewModelOptionsFromParams(params)).toMatchObject({
+      controlledAudioDevices: true,
+      callIntent: "audio",
     });
   });
 });

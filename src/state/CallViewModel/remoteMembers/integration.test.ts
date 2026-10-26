@@ -6,11 +6,11 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { test, vi, expect, beforeEach, afterEach } from "vitest";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, NEVER } from "rxjs";
 import { type Room as LivekitRoom } from "livekit-client";
 import EventEmitter from "events";
 import fetchMock from "fetch-mock";
-import { type LivekitTransportConfig } from "matrix-js-sdk/lib/matrixrtc";
+import { type LivekitTransport } from "matrix-js-sdk/lib/matrixrtc";
 import { logger } from "matrix-js-sdk/lib/logger";
 
 import {
@@ -29,13 +29,12 @@ import {
 import { type ProcessorState } from "../../../livekit/TrackProcessorContext.tsx";
 import {
   areLivekitTransportsEqual,
-  createMatrixLivekitMembers$,
+  createRemoteMatrixLivekitMembers$,
   type RemoteMatrixLivekitMember,
 } from "./MatrixLivekitMembers.ts";
 import { createConnectionManager$ } from "./ConnectionManager.ts";
 import { membershipsAndTransports$ } from "../../SessionBehaviors.ts";
-import { constant } from "../../Behavior.ts";
-import { testJWTToken } from "../../../utils/test-fixtures.ts";
+import { localRtcMember, testJWTToken } from "../../../utils/test-fixtures.ts";
 
 // Test the integration of ConnectionManager and MatrixLivekitMerger
 
@@ -124,20 +123,21 @@ test("bob, carl, then bob joining no tracks yet", () => {
     const connectionManager = createConnectionManager$({
       scope: testScope,
       connectionFactory: ecConnectionFactory,
-      localTransport$: constant(null),
+      localTransport$: NEVER,
       remoteTransports$: membershipsAndTransports.transports$,
       logger: logger,
       ownMembershipIdentity: ownMemberMock,
     });
 
-    const matrixLivekitMembers$ = createMatrixLivekitMembers$({
+    const remoteMatrixLivekitMembers$ = createRemoteMatrixLivekitMembers$({
       scope: testScope,
       membershipsWithTransport$:
         membershipsAndTransports.membershipsWithTransport$,
       connectionManager,
+      localUser: localRtcMember,
     });
 
-    expectObservable(matrixLivekitMembers$).toBe(vMarble, {
+    expectObservable(remoteMatrixLivekitMembers$).toBe(vMarble, {
       a: expect.toSatisfy((e: Epoch<RemoteMatrixLivekitMember[]>) => {
         const items = e.value;
         expect(items.length).toBe(1);
@@ -149,7 +149,7 @@ test("bob, carl, then bob joining no tracks yet", () => {
           a: expect.toSatisfy((co) =>
             areLivekitTransportsEqual(
               co.transport,
-              bobMembership.transports[0]! as LivekitTransportConfig,
+              bobMembership.transports[0]! as LivekitTransport,
             ),
           ),
         });
@@ -186,7 +186,7 @@ test("bob, carl, then bob joining no tracks yet", () => {
               expect(
                 areLivekitTransportsEqual(
                   connection.transport,
-                  carlMembership.transports[0]! as LivekitTransportConfig,
+                  carlMembership.transports[0]! as LivekitTransport,
                 ),
               ).toBe(true);
               return true;
@@ -216,7 +216,7 @@ test("bob, carl, then bob joining no tracks yet", () => {
               expect(
                 areLivekitTransportsEqual(
                   connection.transport,
-                  daveMembership.transports[0]! as LivekitTransportConfig,
+                  daveMembership.transports[0]! as LivekitTransport,
                 ),
               ).toBe(true);
               return true;

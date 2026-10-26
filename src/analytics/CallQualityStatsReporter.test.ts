@@ -155,9 +155,9 @@ describe("CallQualityStatsReporter", () => {
   });
 
   it("does not run when analytics is disabled", () => {
-    (PosthogAnalytics.instance.isEnabled as unknown as MockInstance).mockReturnValue(
-      false,
-    );
+    (
+      PosthogAnalytics.instance.isEnabled as unknown as MockInstance
+    ).mockReturnValue(false);
     const reporter = new CallQualityStatsReporter("!room:hs", {
       sampleIntervalMs: 1000,
       flushIntervalMs: 100000,

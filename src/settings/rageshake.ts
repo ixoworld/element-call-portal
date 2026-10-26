@@ -149,7 +149,7 @@ class IndexedDBLogStore {
    * @return Resolves when the store is ready.
    */
   public async connect(): Promise<void> {
-    const req = this.indexedDB.open("logs");
+    const req = this.indexedDB.open("logs-element-call");
     return new Promise((resolve, reject) => {
       req.onsuccess = (): void => {
         this.db = req.result;
@@ -204,10 +204,13 @@ class IndexedDBLogStore {
   // Throttled function to flush logs. We use throttle rather
   // than debounce as we want logs to be written regularly, otherwise
   // if there's a constant stream of logging, we'd never write anything.
-  private throttledFlush = throttle(() => this.flush, MAX_FLUSH_INTERVAL_MS, {
-    leading: false,
-    trailing: true,
-  });
+  private throttledFlush = throttle(
+    () => {
+      this.flush().catch((e) => logger.error("Failed to flush logs", e));
+    },
+    MAX_FLUSH_INTERVAL_MS,
+    { leading: false, trailing: true },
+  );
 
   /**
    * Flush logs to disk.
@@ -467,7 +470,7 @@ declare global {
   // eslint-disable-next-line no-var, camelcase
   var mx_rage_initStoragePromise: Promise<void> | undefined;
 }
-
+export let rageshakeLogger: Logger;
 /**
  * Configure rage shaking support for sending bug reports.
  * Modifies globals.
@@ -477,7 +480,8 @@ export async function init(): Promise<void> {
   global.mx_rage_logger = new ConsoleLogger();
 
   // configure loglevel based loggers:
-  setLogExtension(logger, global.mx_rage_logger.log);
+  rageshakeLogger = logger;
+  setLogExtension(rageshakeLogger, global.mx_rage_logger.log);
 
   // intercept console logging so that we can get matrix_sdk logs:
   // this is nasty, but no logging hooks are provided

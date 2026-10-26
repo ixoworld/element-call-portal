@@ -5,7 +5,11 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type IOpenIDToken, type MatrixClient } from "matrix-js-sdk";
+import {
+  type IOpenIDToken,
+  type MatrixClient,
+  parseErrorResponse,
+} from "matrix-js-sdk";
 import { type CallMembershipIdentityParts } from "matrix-js-sdk/lib/matrixrtc/EncryptionManager";
 import { type Logger } from "matrix-js-sdk/lib/logger";
 
@@ -15,7 +19,7 @@ import {
 } from "../utils/errors";
 import { doNetworkOperationWithRetry } from "../utils/matrix";
 import { Config } from "../config/Config";
-import { JwtEndpointVersion } from "../state/CallViewModel/localMember/LocalTransport";
+import { MatrixRTCMode } from "../config/ConfigOptions";
 
 /**
  * Configuration and access tokens provided by the SFU on successful authentication.
@@ -76,11 +80,10 @@ export type OpenIDClientParts = Pick<
  * @param serviceUrl The URL of the livekit SFU service
  * @param roomId The room id used in the jwt request. This is NOT the livekit_alias. The jwt service will provide the alias. It maps matrix room ids <-> Livekit aliases.
  * @param opts Additional options to modify which endpoint with which data will be used to acquire the jwt token.
- * @param opts.forceJwtEndpoint This will use the old jwt endpoint which will create the rtc backend identity based on string concatenation
- * instead of a hash.
+ * @param opts.matrixRTCMode Determines which version of the JWT endpoint to use, which affects whether the
+ * RTC backend identity is based on string concatenation (legacy) or a hash (Matrix 2.0).
  * This function by default uses whatever is possible with the current jwt service installed next to the SFU.
  * For remote connections this does not matter, since we will not publish there we can rely on the newest option.
- * For our own connection we can only use the hashed version if we also send the new matrix2.0 sticky events.
  * @param opts.delayEndpointBaseUrl The URL of the matrix homeserver.
  * @param opts.delayId The delay id used for the jwt service to manage.
  * @param logger optional logger.
@@ -93,7 +96,7 @@ export async function getSFUConfigWithOpenID(
   serviceUrl: string,
   roomId: string,
   opts?: {
-    forceJwtEndpoint?: JwtEndpointVersion;
+    matrixRTCMode?: MatrixRTCMode;
     delayEndpointBaseUrl?: string;
     delayId?: string;
   },
@@ -112,19 +115,18 @@ export async function getSFUConfigWithOpenID(
   logger?.debug("Got openID token", openIdToken);
   let sfuConfig: { url: string; jwt: string } | undefined;
 
-  const tryBothJwtEndpoints = opts?.forceJwtEndpoint === undefined; // This is for SFUs where we do not publish.
+  const tryBothJwtEndpoints = opts?.matrixRTCMode === undefined; // This is for SFUs where we do not publish.
 
-  const forceMatrix2Jwt =
-    opts?.forceJwtEndpoint === JwtEndpointVersion.Matrix_2_0;
+  const forceMatrix2Jwt = opts?.matrixRTCMode === MatrixRTCMode.Matrix_2_0;
 
   // We want to start using the new endpoint (with optional delay delegation)
   // if we can use both or if we are forced to use the new one.
   if (tryBothJwtEndpoints || forceMatrix2Jwt) {
     try {
       logger?.info(
-        `Trying to get JWT with delegation for focus ${serviceUrl}...`,
+        `Trying to get JWT via default endpoint for focus ${serviceUrl}...`,
       );
-      const sfuConfig = await getLiveKitJWTWithDelayDelegation(
+      const sfuConfig = await getLiveKitJWT(
         membership,
         serviceUrl,
         roomId,
@@ -150,7 +152,7 @@ export async function getSFUConfigWithOpenID(
     logger?.info(
       `Trying to get JWT with legacy endpoint for focus ${serviceUrl}...`,
     );
-    sfuConfig = await getLiveKitJWT(
+    sfuConfig = await getLiveKitJWTLegacy(
       membership.deviceId,
       serviceUrl,
       roomId,
@@ -184,7 +186,7 @@ function extractFullConfigFromToken(sfuConfig: {
   };
 }
 
-async function getLiveKitJWT(
+async function getLiveKitJWTLegacy(
   deviceId: string,
   livekitServiceURL: string,
   matrixRoomId: string,
@@ -200,11 +202,10 @@ async function getLiveKitJWT(
   let bodyDalayParts: IDelayParams = {};
   // Also check for empty string
   if (delayId && delayEndpointBaseUrl) {
-    const delayTimeoutMs =
-      Config.get().matrix_rtc_session?.delayed_leave_event_delay_ms;
     bodyDalayParts = {
       delay_id: delayId,
-      delay_timeout: delayTimeoutMs,
+      delay_timeout:
+        Config.get().matrix_rtc_session.delegated_delayed_leave.delay_ms,
       delay_cs_api_url: delayEndpointBaseUrl,
     };
   }
@@ -248,7 +249,7 @@ async function getLiveKitJWT(
   });
 
   if (!res.ok) {
-    throw new Error("SFU Config fetch failed with status code " + res.status);
+    throw parseErrorResponse(res, await res.text());
   }
   return await res.json();
 }
@@ -260,7 +261,7 @@ class NotSupportedError extends Error {
   }
 }
 
-export async function getLiveKitJWTWithDelayDelegation(
+export async function getLiveKitJWT(
   membership: CallMembershipIdentityParts,
   livekitServiceURL: string,
   matrixRoomId: string,
@@ -284,11 +285,10 @@ export async function getLiveKitJWTWithDelayDelegation(
   let bodyDalayParts = {};
   // Also check for empty string
   if (delayId && delayEndpointBaseUrl) {
-    const delayTimeoutMs =
-      Config.get().matrix_rtc_session?.delayed_leave_event_delay_ms;
     bodyDalayParts = {
       delay_id: delayId,
-      delay_timeout: delayTimeoutMs,
+      delay_timeout:
+        Config.get().matrix_rtc_session.delegated_delayed_leave.delay_ms,
       delay_cs_api_url: delayEndpointBaseUrl,
     };
   }
@@ -308,7 +308,7 @@ export async function getLiveKitJWTWithDelayDelegation(
     if (res.status === 404) {
       throw new NotSupportedError(msg);
     } else {
-      throw new Error(msg);
+      throw parseErrorResponse(res, await res.text());
     }
   }
   return await res.json();

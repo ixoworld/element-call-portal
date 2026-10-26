@@ -8,6 +8,7 @@ Please see LICENSE in the repository root for full details.
 import {
   type ChangeEvent,
   type FC,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -29,11 +30,14 @@ import {
   InlineField,
   Label,
   RadioControl,
+  Separator,
 } from "@vector-im/compound-web";
 import { type Room as LivekitRoom } from "livekit-client";
 
 import { FieldRow, InputField } from "../input/Input";
+import { Config } from "../config/Config";
 import {
+  type Setting,
   useSetting,
   duplicateTiles as duplicateTilesSetting,
   debugTileLayout as debugTileLayoutSetting,
@@ -42,11 +46,61 @@ import {
   alwaysShowIphoneEarpiece as alwaysShowIphoneEarpieceSetting,
   matrixRTCMode as matrixRTCModeSetting,
   customLivekitUrl as customLivekitUrlSetting,
-  MatrixRTCMode,
+  advancedScreenShare as advancedScreenShareSetting,
+  screenShareResolution as screenShareResolutionSetting,
+  screenShareFramerate as screenShareFramerateSetting,
+  screenShareBitrate as screenShareBitrateSetting,
+  screenShareCodec as screenShareCodecSetting,
+  advancedCamera as advancedCameraSetting,
+  cameraResolution as cameraResolutionSetting,
+  cameraFramerate as cameraFramerateSetting,
+  cameraBitrate as cameraBitrateSetting,
+  cameraCodec as cameraCodecSetting,
+  echoCancellationSetting,
+  noiseSuppressionSetting,
+  autoGainControlSetting,
+  type VideoCodec,
+  enableExtendedLivekitLogs as enableExtendedLivekitLogsSetting,
 } from "./settings";
+import { MatrixRTCMode } from "../config/ConfigOptions";
 import styles from "./DeveloperSettingsTab.module.css";
+import settingsStyles from "./SettingsModal.module.css";
+import { Slider } from "../Slider";
 import { useUrlParams } from "../UrlParams";
 import { getSFUConfigWithOpenID } from "../livekit/openIDSFU";
+import { useBehavior } from "../useBehavior";
+import { type ViewModel } from "../state/ViewModel.ts";
+
+/**
+ * The state of MatrixRTC's media key rotation.
+ */
+export interface KeyRotationInfo {
+  /** Whether the call is large enough that MatrixRTC has stopped rotating the media key. */
+  suppressed: boolean;
+  participantCount: number;
+}
+
+/**
+ * The Snapshot combines all fields the developer settings tab needs from the
+ * surrounding call. Everything else in this tab is read from the settings store
+ * or the environment directly.
+ */
+export interface DeveloperSettingsSnapshot {
+  /** The media key rotation state, or `null` when we are not in a call. */
+  keyRotation: KeyRotationInfo | null;
+}
+
+/**
+ * Shows whether the call is large enough that MatrixRTC has stopped rotating the media key.
+ */
+const KeyRotationStatus: FC<{ info: KeyRotationInfo }> = ({ info }) => (
+  <p>
+    Media key rotation:{" "}
+    {info.suppressed
+      ? `suppressed, participant limit reached (${info.participantCount} participants)`
+      : `active (${info.participantCount} participants)`}
+  </p>
+);
 
 interface Props {
   client: MatrixClient;
@@ -58,6 +112,7 @@ interface Props {
     livekitAlias?: string;
   }[];
   env: ImportMetaEnv;
+  vm: ViewModel<DeveloperSettingsSnapshot>;
 }
 
 export const DeveloperSettingsTab: FC<Props> = ({
@@ -65,8 +120,10 @@ export const DeveloperSettingsTab: FC<Props> = ({
   livekitRooms,
   roomId,
   env,
+  vm,
 }) => {
   const { t } = useTranslation();
+  const keyRotation = useBehavior(vm.keyRotation$);
   const [duplicateTiles, setDuplicateTiles] = useSetting(duplicateTilesSetting);
   const [debugTileLayout, setDebugTileLayout] = useSetting(
     debugTileLayoutSetting,
@@ -92,6 +149,11 @@ export const DeveloperSettingsTab: FC<Props> = ({
     },
     [setMatrixRTCMode],
   );
+  const configMatrixRTCMode = Config.get().matrix_rtc_mode as
+    | MatrixRTCMode
+    | undefined;
+  const matrixRTCModeForced = configMatrixRTCMode !== undefined;
+  const effectiveMatrixRTCMode = configMatrixRTCMode ?? matrixRTCMode;
 
   const [showConnectionStats, setShowConnectionStats] = useSetting(
     showConnectionStatsSetting,
@@ -99,6 +161,10 @@ export const DeveloperSettingsTab: FC<Props> = ({
 
   const [alwaysShowIphoneEarpiece, setAlwaysShowIphoneEarpiece] = useSetting(
     alwaysShowIphoneEarpieceSetting,
+  );
+
+  const [enableExtendedLivekitLogs, setEnableExtendedLivekitLogs] = useSetting(
+    enableExtendedLivekitLogsSetting,
   );
 
   const [customLivekitUrlUpdateError, setCustomLivekitUrlUpdateError] =
@@ -126,6 +192,185 @@ export const DeveloperSettingsTab: FC<Props> = ({
     }
     return null;
   }, [livekitRooms]);
+
+  const MediaQualitySettings: React.FC<{
+    id: string;
+    header: string;
+    toggleLabel: string;
+    description: string;
+    toggleSetting: Setting<boolean>;
+    resolutionSetting: Setting<string>;
+    framerateSetting: Setting<number>;
+    bitrateSetting: Setting<number>;
+    codecSetting: Setting<VideoCodec>;
+    resolutionOptions: { value: string; label: string }[];
+    bitrateRange: { min: number; max: number; step: number };
+  }> = ({
+    id,
+    header,
+    toggleLabel,
+    description,
+    toggleSetting,
+    resolutionSetting,
+    framerateSetting,
+    bitrateSetting,
+    codecSetting,
+    resolutionOptions,
+    bitrateRange,
+  }): ReactNode => {
+    const [advancedEnabled, setAdvancedEnabled] = useSetting(toggleSetting);
+    const [resolution, setResolution] = useSetting(resolutionSetting);
+    const [framerate, setFramerate] = useSetting(framerateSetting);
+    const [framerateRaw, setFramerateRaw] = useState(framerate);
+    const [bitrate, setBitrate] = useSetting(bitrateSetting);
+    const [bitrateRaw, setBitrateRaw] = useState(bitrate);
+    const [codec, setCodec] = useSetting(codecSetting);
+
+    return (
+      <>
+        <h4>{header}</h4>
+        <FieldRow>
+          <InputField
+            id={`${id}Toggle`}
+            label={toggleLabel}
+            description={description}
+            type="checkbox"
+            checked={advancedEnabled}
+            onChange={(e): void => setAdvancedEnabled(e.target.checked)}
+          />
+        </FieldRow>
+        {advancedEnabled && (
+          <>
+            <div className={settingsStyles.volumeSlider}>
+              <label htmlFor={`${id}Resolution`}>
+                {t("settings.resolution_label", "Resolution")}
+              </label>
+              <select
+                id={`${id}Resolution`}
+                value={resolution}
+                onChange={(e): void => setResolution(e.target.value)}
+              >
+                {resolutionOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className={settingsStyles.volumeSlider}>
+              <label>
+                {t("settings.framerate_label", "Framerate")}
+                {": "}
+                <span className={settingsStyles.settingValue}>
+                  {framerateRaw} fps
+                </span>
+              </label>
+              <Slider
+                label={t("settings.framerate_label", "Framerate")}
+                value={framerateRaw}
+                onValueChange={setFramerateRaw}
+                onValueCommit={setFramerate}
+                min={5}
+                max={60}
+                step={5}
+                tooltipFormatter={(v): string => `${v} fps`}
+              />
+            </div>
+            <div className={settingsStyles.volumeSlider}>
+              <label>
+                {t("settings.bitrate_label", "Bitrate")}
+                {": "}
+                <span className={settingsStyles.settingValue}>
+                  {(bitrateRaw / 1_000_000).toFixed(1)} Mbps
+                </span>
+              </label>
+              <Slider
+                label={t("settings.bitrate_label", "Bitrate")}
+                value={bitrateRaw}
+                onValueChange={setBitrateRaw}
+                onValueCommit={setBitrate}
+                min={bitrateRange.min}
+                max={bitrateRange.max}
+                step={bitrateRange.step}
+                tooltipFormatter={(v): string =>
+                  `${(v / 1_000_000).toFixed(1)} Mbps`
+                }
+              />
+            </div>
+            <div className={settingsStyles.volumeSlider}>
+              <label htmlFor={`${id}Codec`}>
+                {t("settings.codec_label", "Codec")}
+              </label>
+              <select
+                id={`${id}Codec`}
+                value={codec}
+                onChange={(e): void => setCodec(e.target.value as VideoCodec)}
+              >
+                <option value="vp8">VP8</option>
+                <option value="vp9">VP9</option>
+                <option value="h264">H.264</option>
+                <option value="av1">AV1</option>
+              </select>
+            </div>
+          </>
+        )}
+      </>
+    );
+  };
+
+  const AudioProcessingSettings: React.FC = (): ReactNode => {
+    const [echoCancellation, setEchoCancellation] = useSetting(
+      echoCancellationSetting,
+    );
+    const [noiseSuppression, setNoiseSuppression] = useSetting(
+      noiseSuppressionSetting,
+    );
+    const [autoGainControl, setAutoGainControl] = useSetting(
+      autoGainControlSetting,
+    );
+
+    return (
+      <>
+        <h4>{t("settings.audio_processing_header", "Audio processing")}</h4>
+        <p>
+          {t(
+            "settings.audio_processing_description",
+            "Changes apply on next call join.",
+          )}
+        </p>
+        <FieldRow>
+          <InputField
+            id="echoCancellation"
+            label={t("settings.echo_cancellation_label", "Echo cancellation")}
+            type="checkbox"
+            checked={echoCancellation}
+            onChange={(e): void => setEchoCancellation(e.target.checked)}
+          />
+        </FieldRow>
+        <FieldRow>
+          <InputField
+            id="noiseSuppression"
+            label={t("settings.noise_suppression_label", "Noise suppression")}
+            type="checkbox"
+            checked={noiseSuppression}
+            onChange={(e): void => setNoiseSuppression(e.target.checked)}
+          />
+        </FieldRow>
+        <FieldRow>
+          <InputField
+            id="autoGainControl"
+            label={t(
+              "settings.auto_gain_control_label",
+              "Automatic gain control",
+            )}
+            type="checkbox"
+            checked={autoGainControl}
+            onChange={(e): void => setAutoGainControl(e.target.checked)}
+          />
+        </FieldRow>
+      </>
+    );
+  };
 
   return (
     <>
@@ -155,6 +400,8 @@ export const DeveloperSettingsTab: FC<Props> = ({
           id: client.getDeviceId() || "unknown",
         })}
       </p>
+      {keyRotation !== null && <KeyRotationStatus info={keyRotation} />}
+      <Separator />
       <FieldRow>
         <InputField
           id="duplicateTiles"
@@ -225,7 +472,21 @@ export const DeveloperSettingsTab: FC<Props> = ({
             },
             [setAlwaysShowIphoneEarpiece],
           )}
-        />{" "}
+        />
+      </FieldRow>
+      <FieldRow>
+        <InputField
+          id="enableLivekitExtendedLogs"
+          type="checkbox"
+          label="Enable extended livekit logs"
+          checked={enableExtendedLivekitLogs}
+          onChange={useCallback(
+            (event: ChangeEvent<HTMLInputElement>): void => {
+              setEnableExtendedLivekitLogs(event.target.checked);
+            },
+            [setEnableExtendedLivekitLogs],
+          )}
+        />
       </FieldRow>
       <EditInPlace
         onSubmit={(e) => e.preventDefault()}
@@ -290,31 +551,19 @@ export const DeveloperSettingsTab: FC<Props> = ({
           <ErrorMessage>{customLivekitUrlUpdateError}</ErrorMessage>
         )}
       </EditInPlace>
+      <Separator />
       <Heading as="h3" type="body" weight="semibold" size="lg">
         {t("developer_mode.matrixRTCMode.title")}
       </Heading>
+      {matrixRTCModeForced && <p>Your deployment overrides the mode.</p>}
       <Form>
         <InlineField
           name={matrixRTCModeRadioGroup}
           control={
             <RadioControl
-              checked={matrixRTCMode === MatrixRTCMode.Legacy}
-              value={MatrixRTCMode.Legacy}
-              onChange={onMatrixRTCModeChange}
-            />
-          }
-        >
-          <Label>{t("developer_mode.matrixRTCMode.Legacy.label")}</Label>
-          <HelpMessage>
-            {t("developer_mode.matrixRTCMode.Legacy.description")}
-          </HelpMessage>
-        </InlineField>
-        <InlineField
-          name={matrixRTCModeRadioGroup}
-          control={
-            <RadioControl
-              checked={matrixRTCMode === MatrixRTCMode.Compatibility}
+              checked={effectiveMatrixRTCMode === MatrixRTCMode.Compatibility}
               value={MatrixRTCMode.Compatibility}
+              disabled={matrixRTCModeForced}
               onChange={onMatrixRTCModeChange}
             />
           }
@@ -328,9 +577,9 @@ export const DeveloperSettingsTab: FC<Props> = ({
           name={matrixRTCModeRadioGroup}
           control={
             <RadioControl
-              checked={matrixRTCMode === MatrixRTCMode.Matrix_2_0}
+              checked={effectiveMatrixRTCMode === MatrixRTCMode.Matrix_2_0}
               value={MatrixRTCMode.Matrix_2_0}
-              disabled={!stickyEventsSupported}
+              disabled={matrixRTCModeForced || !stickyEventsSupported}
               onChange={onMatrixRTCModeChange}
             />
           }
@@ -375,10 +624,65 @@ export const DeveloperSettingsTab: FC<Props> = ({
           </ul>
         </div>
       ))}
+      <Separator />
+      <MediaQualitySettings
+        id="camera"
+        header={t("settings.camera_header", "Camera quality")}
+        toggleLabel={t(
+          "settings.advanced_camera_label",
+          "Advanced camera settings",
+        )}
+        description={t(
+          "settings.advanced_camera_description",
+          "Configure resolution, framerate, bitrate, and codec for camera video. Changes apply on next call join.",
+        )}
+        toggleSetting={advancedCameraSetting}
+        resolutionSetting={cameraResolutionSetting}
+        framerateSetting={cameraFramerateSetting}
+        bitrateSetting={cameraBitrateSetting}
+        codecSetting={cameraCodecSetting}
+        resolutionOptions={[
+          { value: "640x360", label: "360p" },
+          { value: "960x540", label: "540p" },
+          { value: "1280x720", label: "720p" },
+          { value: "1920x1080", label: "1080p" },
+          { value: "2560x1440", label: "1440p" },
+        ]}
+        bitrateRange={{ min: 200_000, max: 8_000_000, step: 100_000 }}
+      />
+      <Separator />
+      <MediaQualitySettings
+        id="screenShare"
+        header={t("settings.screen_share_header", "Screen sharing")}
+        toggleLabel={t(
+          "settings.advanced_screen_share_label",
+          "Advanced screen share settings",
+        )}
+        description={t(
+          "settings.advanced_screen_share_description",
+          "Configure resolution, framerate, bitrate, and codec for screen sharing",
+        )}
+        toggleSetting={advancedScreenShareSetting}
+        resolutionSetting={screenShareResolutionSetting}
+        framerateSetting={screenShareFramerateSetting}
+        bitrateSetting={screenShareBitrateSetting}
+        codecSetting={screenShareCodecSetting}
+        resolutionOptions={[
+          { value: "1024x576", label: "576p" },
+          { value: "1280x720", label: "720p" },
+          { value: "1920x1080", label: "1080p" },
+          { value: "2560x1440", label: "1440p" },
+          { value: "3840x2160", label: "4K" },
+        ]}
+        bitrateRange={{ min: 500_000, max: 15_000_000, step: 500_000 }}
+      />
+      <Separator />
+      <AudioProcessingSettings />
+      <Separator />
       <p>{t("developer_mode.environment_variables")}</p>
-      <pre>{JSON.stringify(env, null, 2)}</pre>
+      <pre className={styles.pre}>{JSON.stringify(env, null, 2)}</pre>
       <p>{t("developer_mode.url_params")}</p>
-      <pre>{JSON.stringify(urlParams, null, 2)}</pre>
+      <pre className={styles.pre}>{JSON.stringify(urlParams, null, 2)}</pre>
     </>
   );
 };

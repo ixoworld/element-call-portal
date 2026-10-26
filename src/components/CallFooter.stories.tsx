@@ -13,10 +13,16 @@ import { Link } from "@vector-im/compound-web";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { CallFooter, type FooterSnapshot } from "./CallFooter";
 import inCallViewStyles from "../room/InCallView.module.css";
+import styles from "./CallFooter.module.css";
 import { useStaticViewModel } from "../state/ViewModel";
 import { ReactionsSenderContext } from "../reactions/useReactionsSender";
 import { type ReactionOption } from "../reactions";
-import { type GridMode } from "../state/CallViewModel/CallViewModel";
+import { MediaDevicesContext } from "../MediaDevicesContext";
+import { MediaDevices } from "../state/MediaDevices";
+import { globalScope } from "../state/ObservableScope";
+import { constant } from "../state/Behavior";
+import { type LayoutMode } from "../state/LayoutSwitchViewModel";
+
 // consts for tests
 const reactionIdentifier = "@user:example.com:DEVICE";
 const reactionData = {
@@ -24,9 +30,14 @@ const reactionData = {
   reactions$: new BehaviorSubject({}),
 };
 
+const mediaDevices = new MediaDevices(globalScope, {
+  controlledAudioDevices: false,
+});
+
 /**
  * A wrapper component that is used for:
  *  - exposing the snapshot via props so the storybook documents the snapshot properties (basically unpack them form the vm)
+ *  - constructing the layout switch view model
  *  - Add additional react context
  * The paraeters are all params from the FooterSnapshot,
  * the Snapshot of the vm, the wrapper will create a mocked vm from it and pass it to the CallFooter.
@@ -35,32 +46,34 @@ const reactionData = {
  */
 function CallFooterStoryWrapper({
   children,
+  layout,
+  setLayout,
   ...vmSnapshot
-}: FooterSnapshot & {
+}: Omit<FooterSnapshot, "layoutSwitchVm"> & {
   children?: false | JSX.Element | JSX.Element[] | undefined;
+  layout: LayoutMode | null;
+  setLayout: (value: LayoutMode) => void;
 }): ReactNode {
-  const vm = useStaticViewModel(vmSnapshot);
+  const vm = useStaticViewModel({
+    ...vmSnapshot,
+    layoutSwitchVm: layout && { layout$: constant(layout), setLayout },
+  });
   return (
-    <div className={inCallViewStyles.inRoom}>
-      <ReactionsSenderContext
-        value={{
-          supportsReactions: false,
-          toggleRaisedHand: async () => Promise.resolve(),
-          sendReaction: async (reaction: ReactionOption) => Promise.resolve(),
-        }}
-      >
-        <CallFooter vm={vm} />
-      </ReactionsSenderContext>
-    </div>
+    <MediaDevicesContext value={mediaDevices}>
+      <div className={inCallViewStyles.inRoom}>
+        <ReactionsSenderContext
+          value={{
+            supportsReactions: false,
+            toggleRaisedHand: async () => Promise.resolve(),
+            sendReaction: async (reaction: ReactionOption) => Promise.resolve(),
+          }}
+        >
+          <CallFooter vm={vm} />
+        </ReactionsSenderContext>
+      </div>
+    </MediaDevicesContext>
   );
 }
-
-const meta = {
-  component: CallFooterStoryWrapper,
-} satisfies Meta<typeof CallFooterStoryWrapper>;
-
-export default meta;
-type Story = StoryObj<typeof meta>;
 
 const fnArgType = {
   control: { type: "select" as const },
@@ -68,44 +81,12 @@ const fnArgType = {
   mapping: { MockedCallback: fn(), undefined: undefined },
 };
 
-export const Default: Story = {
-  args: {
-    showLogo: false,
-    layoutMode: "grid",
-    audioEnabled: true,
-    videoEnabled: true,
-    setLayoutMode: fn(),
-    openSettings: fn(),
-    toggleAudio: fn(),
-    toggleVideo: fn(),
-    toggleScreenSharing: fn(),
-    toggleBlur: fn(),
-    videoBlurEnabled: true,
-    hangup: fn(),
-    buttonSize: "lg",
-    showFooter: true,
-    hideControls: false,
-    asOverlay: false,
-    sharingScreen: false,
-    audioOutputSwitcher: undefined,
-    reactionIdentifier: undefined,
-    reactionData: undefined,
-    debugTileLayout: false,
-    tileStoreGeneration: undefined,
-    audioOptions: [],
-    videoOptions: [],
-    selectedAudio: undefined,
-    selectedVideo: undefined,
-    selectAudioButtonOption: undefined,
-    selectVideoButtonOption: undefined,
-  },
-  parameters: {
-    layout: "fullscreen",
-  },
+const meta = {
+  component: CallFooterStoryWrapper,
   argTypes: {
-    layoutMode: {
+    layout: {
       control: "radio",
-      options: ["grid", "spotlight"] satisfies GridMode[],
+      options: ["grid", "spotlight"] satisfies LayoutMode[],
     },
     audioOutputSwitcher: {
       control: "select",
@@ -119,11 +100,55 @@ export const Default: Story = {
       },
     },
     toggleScreenSharing: fnArgType,
-    setLayoutMode: fnArgType,
     openSettings: fnArgType,
     toggleAudio: fnArgType,
     toggleVideo: fnArgType,
     hangup: fnArgType,
+  },
+} satisfies Meta<typeof CallFooterStoryWrapper>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Default: Story = {
+  args: {
+    showLogo: false,
+    layout: "grid",
+    setLayout: fn(),
+    audioEnabled: true,
+    audioBusy: false,
+    videoEnabled: true,
+    videoBusy: false,
+    openSettings: fn(),
+    toggleAudio: fn(),
+    toggleVideo: fn(),
+    toggleScreenSharing: fn(),
+    toggleBlur: fn(),
+    videoBlurEnabled: true,
+    hangup: fn(),
+    buttonSize: "lg",
+    showFooter: true,
+    hideControls: false,
+    asOverlay: false,
+    showModals: true,
+    sharingScreen: false,
+    audioOutputSwitcher: undefined,
+    reactionIdentifier: undefined,
+    reactionData: undefined,
+    debugTileLayout: false,
+    tileStoreGeneration: undefined,
+    audioOptions: [],
+    audioOutputOptions: [],
+    videoOptions: [],
+    selectedAudio: undefined,
+    selectedAudioOutput: undefined,
+    selectedVideo: undefined,
+    selectAudioButtonOption: undefined,
+    selectAudioOutputOption: undefined,
+    selectVideoButtonOption: undefined,
+  },
+  parameters: {
+    layout: "fullscreen",
   },
 };
 
@@ -137,12 +162,63 @@ export const WithAudioAndVideoOptions: Story = {
       { label: { type: "name", name: "Microphone 1" }, id: "1" },
       { label: { type: "name", name: "Microphone 2" }, id: "2" },
     ],
+    audioOutputOptions: [
+      { label: { type: "default", name: "Built-in Output" }, id: "default" },
+      { label: { type: "name", name: "Headset" }, id: "2" },
+    ],
     videoOptions: [
       { label: { type: "name", name: "Camera 1" }, id: "1" },
       { label: { type: "name", name: "Camera 2" }, id: "2" },
     ],
     selectedAudio: "2",
+    selectedAudioOutput: "default",
     selectedVideo: "1",
+  },
+};
+
+export const StaysWhileAMenuIsOpen: Story = {
+  ...Default,
+  args: {
+    ...WithAudioAndVideoOptions.args,
+    // In a short window the footer overlays the call and hides itself.
+    asOverlay: true,
+    showFooter: true,
+  },
+  play: async ({ canvasElement }): Promise<void> => {
+    const footer = canvasElement.querySelector<HTMLElement>(
+      '[data-testid="footer-container"]',
+    )!;
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Microphone" }),
+    );
+    await expect(document.body.querySelector('[role="menu"]')).not.toBeNull();
+
+    // The call hides the footer with this class.
+    footer.classList.add(styles.hidden);
+
+    // Read after the 0.15s fade, not mid-transition.
+    await new Promise((settled) => setTimeout(settled, 400));
+    await expect(getComputedStyle(footer).opacity).toBe("1");
+  },
+};
+
+export const AudioBusy: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    audioEnabled: true,
+    audioBusy: true,
+    videoEnabled: true,
+  },
+};
+
+export const VideoBusy: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    audioEnabled: true,
+    videoEnabled: true,
+    videoBusy: true,
   },
 };
 export const WithLogo: Story = {
@@ -165,7 +241,7 @@ export const AudioVideoEnabled: Story = {
 
     const spotlightRadio = canvas.getByRole("radio", { name: "Spotlight" });
     await userEvent.click(spotlightRadio);
-    await expect(args.setLayoutMode).toHaveBeenCalledWith("spotlight");
+    await expect(args.setLayout).toHaveBeenCalledWith("spotlight");
 
     const micButtonMute = canvas.getByRole("switch", {
       name: "Mute microphone",
@@ -196,14 +272,14 @@ export const SpotlightMode: Story = {
   ...Default,
   args: {
     ...Default.args,
-    layoutMode: "spotlight",
+    layout: "spotlight",
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
 
     const spotlightRadio = canvas.getByRole("radio", { name: "Grid" });
     await userEvent.click(spotlightRadio);
-    await expect(args.setLayoutMode).toHaveBeenCalledWith("grid");
+    await expect(args.setLayout).toHaveBeenCalledWith("grid");
   },
 };
 
@@ -235,7 +311,7 @@ export const Pip: Story = {
   args: {
     ...Default.args,
     buttonSize: "md",
-    layoutMode: undefined,
+    layout: null,
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
@@ -319,7 +395,7 @@ export const Lobby: Story = {
     ...Default.args,
     showLogo: false,
     openSettings: undefined,
-    setLayoutMode: undefined,
+    layout: null,
     toggleScreenSharing: undefined,
   },
   parameters: {
@@ -333,7 +409,7 @@ export const LobbyMobile: Story = {
     ...Default.args,
     showLogo: false,
 
-    setLayoutMode: undefined,
+    layout: null,
     toggleScreenSharing: undefined,
   },
   globals: {
@@ -350,7 +426,7 @@ export const LobbyRecentButton: Story = {
     ...Default.args,
     children: <Link>Back To Recents</Link>,
     showLogo: false,
-    setLayoutMode: undefined,
+    layout: null,
     toggleScreenSharing: undefined,
   },
   parameters: {
@@ -364,7 +440,7 @@ export const LobbyRecentButtonMobile: Story = {
     ...Default.args,
     children: <Link>Back To Recents</Link>,
     showLogo: false,
-    setLayoutMode: undefined,
+    layout: null,
     toggleScreenSharing: undefined,
   },
   globals: {

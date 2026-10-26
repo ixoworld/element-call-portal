@@ -16,6 +16,7 @@ import {
   type SpotlightTileViewModel,
 } from "./TileViewModel.ts";
 import { type Behavior } from "./Behavior.ts";
+import { shallowEquals as arrayShallowEquals } from "../utils/array.ts";
 
 export interface GridLayoutMedia {
   type: "grid";
@@ -45,15 +46,15 @@ export interface SpotlightExpandedLayoutMedia {
   pip?: UserMediaViewModel;
 }
 
-export interface OneOnOneLandscapeLayoutMedia {
-  type: "one-on-one-landscape";
+export interface OneOnOneDesktopLayoutMedia {
+  type: "one-on-one-desktop";
   edgeToEdge: false;
   spotlight: UserMediaViewModel;
   pip: LocalUserMediaViewModel | RingingMediaViewModel;
 }
 
-export interface OneOnOnePortraitLayoutMedia {
-  type: "one-on-one-portrait";
+export interface OneOnOneMobileLayoutMedia {
+  type: "one-on-one-mobile";
   edgeToEdge: true;
   spotlight: UserMediaViewModel | RingingMediaViewModel;
   pip?: LocalUserMediaViewModel;
@@ -70,8 +71,8 @@ export type LayoutMedia =
   | SpotlightLandscapeLayoutMedia
   | SpotlightPortraitLayoutMedia
   | SpotlightExpandedLayoutMedia
-  | OneOnOneLandscapeLayoutMedia
-  | OneOnOnePortraitLayoutMedia
+  | OneOnOneDesktopLayoutMedia
+  | OneOnOneMobileLayoutMedia
   | PipLayoutMedia;
 
 export interface Alignment {
@@ -108,15 +109,15 @@ export interface SpotlightExpandedLayout {
   pipAlignment$: BehaviorSubject<Alignment>;
 }
 
-export interface OneOnOneLandscapeLayout {
-  type: "one-on-one-landscape";
+export interface OneOnOneDesktopLayout {
+  type: "one-on-one-desktop";
   spotlight: GridTileViewModel;
   pip: GridTileViewModel;
   pipAlignment$: BehaviorSubject<Alignment>;
 }
 
-export interface OneOnOnePortraitLayout {
-  type: "one-on-one-portrait";
+export interface OneOnOneMobileLayout {
+  type: "one-on-one-mobile";
   spotlight: SpotlightTileViewModel;
   pip?: GridTileViewModel;
   pipSize$: Behavior<"sm" | "lg">;
@@ -137,6 +138,33 @@ export type Layout =
   | SpotlightLandscapeLayout
   | SpotlightPortraitLayout
   | SpotlightExpandedLayout
-  | OneOnOneLandscapeLayout
-  | OneOnOnePortraitLayout
+  | OneOnOneDesktopLayout
+  | OneOnOneMobileLayout
   | PipLayout;
+
+/**
+ * Tests whether the top-level properties and array elements of layout `a` are
+ * equal to those of layout `b`. Useful for deduping redundant layout updates.
+ */
+export function layoutShallowEquals(a: Layout, b: Layout): boolean {
+  // If a and b have the same number of keys and every key in a is also in b,
+  // then they have the same keys.
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+
+  for (const key of aKeys) {
+    if (!(key in b)) return false;
+
+    // Now check that they have the same values.
+    const aValue = (a as any)[key];
+    const bValue = (b as any)[key];
+    if (Array.isArray(aValue) && Array.isArray(bValue)) {
+      // Special case for arrays so we can detect when the grid tiles arrays are
+      // essentially the same.
+      if (!arrayShallowEquals(aValue, bValue)) return false;
+    } else if (aValue !== bValue) return false;
+  }
+
+  return true;
+}

@@ -7,12 +7,6 @@ Please see LICENSE in the repository root for full details.
 
 import { type FC, type JSX, type Ref, useMemo } from "react";
 import classNames from "classnames";
-import {
-  SpotlightIcon,
-  GridIcon,
-} from "@vector-im/compound-design-tokens/assets/web/icons";
-import { Switch } from "@vector-im/compound-web";
-import { t } from "i18next";
 
 import LogoMark from "../icons/LogoMark.svg?react";
 import LogoType from "../icons/LogoType.svg?react";
@@ -28,13 +22,15 @@ import {
   type ReactionData,
 } from "../button";
 import styles from "./CallFooter.module.css";
-import { type GridMode } from "../state/CallViewModel/CallViewModel";
 import {
   MediaMuteAndSwitchButton,
   type MenuOptions,
 } from "./MediaMuteAndSwitchButton";
+import { type Behavior } from "../state/Behavior";
 import { type ViewModel } from "../state/ViewModel";
 import { useBehavior } from "../useBehavior";
+import { type LayoutSwitchViewModel } from "../state/LayoutSwitchViewModel";
+import { LayoutSwitch } from "../room/LayoutSwitch";
 
 export interface AudioOutputSwitcher {
   targetOutput: string;
@@ -61,8 +57,6 @@ export interface FooterActions {
   /** Also controls if the videoMute button is disabled */
   toggleVideo: (() => void) | undefined;
   toggleBlur: (() => void) | undefined;
-  /** Also controls if the layout button is visible */
-  setLayoutMode: ((mode: GridMode) => void) | undefined;
   toggleScreenSharing: (() => void) | undefined;
   /** Also controls if the settings button is visible */
   openSettings: (() => void) | undefined;
@@ -72,7 +66,9 @@ export interface FooterActions {
 // we do not use any ? optional properties so that the vm type is including all fields.
 export interface FooterState {
   audioEnabled: boolean;
+  audioBusy: boolean;
   videoEnabled: boolean;
+  videoBusy: boolean;
   videoBlurEnabled: boolean;
   showFooter: boolean;
 
@@ -81,11 +77,13 @@ export interface FooterState {
   /** The footer should be used as an overlay.
    * (Over the Call Grid) This saves spaces on small screens. */
   asOverlay: boolean;
+  showModals: boolean;
 
   buttonSize: "md" | "lg";
   showLogo: boolean;
 
-  layoutMode: GridMode | undefined;
+  /** Also controls if the layout switch is visible */
+  layoutSwitchVm: LayoutSwitchViewModel | null;
 
   sharingScreen: boolean;
 
@@ -101,28 +99,40 @@ export interface FooterState {
 
   /** Providing no options `[]` or `undefined` will imply that we dont have a audio fast switcher */
   audioOptions: MenuOptions[];
+  /** Output (speaker) devices. */
+  audioOutputOptions: MenuOptions[];
   /** Providing no options `[]` or `undefined` will imply that we dont have a audio fast switcher */
   videoOptions: MenuOptions[];
   selectedAudio: string | undefined;
+  selectedAudioOutput: string | undefined;
   selectedVideo: string | undefined;
   selectAudioButtonOption: ((deviceId: string) => void) | undefined;
+  selectAudioOutputOption: ((deviceId: string) => void) | undefined;
   selectVideoButtonOption: ((option: string) => void) | undefined;
 }
 
 export interface FooterProps {
+  className?: string;
   ref?: Ref<HTMLDivElement>;
   children?: JSX.Element | JSX.Element[] | false;
   vm: ViewModel<FooterSnapshot>;
 }
-export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
+export const CallFooter: FC<FooterProps> = ({
+  className,
+  ref,
+  children,
+  vm,
+}) => {
   const asOverlay = useBehavior(vm.asOverlay$);
   const showFooter = useBehavior(vm.showFooter$);
   const hideControls = useBehavior(vm.hideControls$);
-  const layoutMode = useBehavior(vm.layoutMode$);
-  const setLayoutMode = useBehavior(vm.setLayoutMode$);
+  const showModals = useBehavior(vm.showModals$);
+  const layoutSwitchVm = useBehavior(vm.layoutSwitchVm$);
   const openSettings = useBehavior(vm.openSettings$);
   const audioEnabled = useBehavior(vm.audioEnabled$);
+  const audioBusy = useBehavior(vm.audioBusy$);
   const videoEnabled = useBehavior(vm.videoEnabled$);
+  const videoBusy = useBehavior(vm.videoBusy$);
   const toggleAudio = useBehavior(vm.toggleAudio$);
   const toggleVideo = useBehavior(vm.toggleVideo$);
   const sharingScreen = useBehavior(vm.sharingScreen$);
@@ -132,12 +142,14 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
   const audioOutputSwitcher = useBehavior(vm.audioOutputSwitcher$);
   const hangup = useBehavior(vm.hangup$);
   const debugTileLayout = useBehavior(vm.debugTileLayout$);
-  const tileStoreGeneration = useBehavior(vm.tileStoreGeneration$);
   const videoOptions = useBehavior(vm.videoOptions$);
   const selectedVideo = useBehavior(vm.selectedVideo$);
   const audioOptions = useBehavior(vm.audioOptions$);
   const selectedAudio = useBehavior(vm.selectedAudio$);
   const selectAudioButtonOption = useBehavior(vm.selectAudioButtonOption$);
+  const audioOutputOptions = useBehavior(vm.audioOutputOptions$);
+  const selectedAudioOutput = useBehavior(vm.selectedAudioOutput$);
+  const selectAudioOutputOption = useBehavior(vm.selectAudioOutputOption$);
   const selectVideoButtonOption = useBehavior(vm.selectVideoButtonOption$);
   const toggleBlur = useBehavior(vm.toggleBlur$);
   const videoBlurEnabled = useBehavior(vm.videoBlurEnabled$);
@@ -163,15 +175,18 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
   if ((audioOptions?.length ?? 0) > 0) {
     buttons.push(
       <MediaMuteAndSwitchButton
-        title={"Mic Source"}
         key="audio"
         iconsAndLabels="audio"
         enabled={audioEnabled ?? false}
+        busy={audioBusy ?? false}
         onMuteClick={toggleAudio}
         data-testid="incall_mute"
         options={audioOptions}
         selectedOption={selectedAudio}
         onSelect={selectAudioButtonOption}
+        outputOptions={audioOutputOptions}
+        selectedOutputOption={selectedAudioOutput}
+        onSelectOutput={selectAudioOutputOption}
       />,
     );
   } else {
@@ -180,8 +195,9 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
         size={buttonSize}
         key="audio"
         enabled={audioEnabled ?? false}
+        busy={audioBusy ?? false}
         onClick={toggleAudio}
-        disabled={toggleAudio === undefined}
+        disabled={(audioBusy ?? false) || toggleAudio === undefined}
         data-testid="incall_mute"
       />,
     );
@@ -190,10 +206,10 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
   if ((videoOptions?.length ?? 0) > 0) {
     buttons.push(
       <MediaMuteAndSwitchButton
-        title={"Camera Source"}
         key="video"
         iconsAndLabels="video"
         enabled={videoEnabled ?? false}
+        busy={videoBusy ?? false}
         onMuteClick={toggleVideo}
         options={videoOptions}
         selectedOption={selectedVideo}
@@ -208,8 +224,9 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
         size={buttonSize}
         key="video"
         enabled={videoEnabled ?? false}
+        busy={videoBusy ?? false}
         onClick={toggleVideo}
-        disabled={toggleVideo === undefined}
+        disabled={(videoBusy ?? false) || toggleVideo === undefined}
         data-testid="incall_videomute"
       />,
     );
@@ -228,7 +245,8 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
     );
   }
 
-  if (reactionIdentifier && reactionData) {
+  // Reaction button contains a pretty large menu, so treat it like a modal
+  if (reactionIdentifier && reactionData && showModals) {
     buttons.push(
       <ReactionToggleButton
         size={buttonSize}
@@ -276,7 +294,9 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
           />
         </>
       )}
-      {debugTileLayout ? `Tiles generation: ${tileStoreGeneration}` : undefined}
+      {debugTileLayout ? (
+        <TilesDebugInfo generation$={vm.tileStoreGeneration$} />
+      ) : undefined}
     </div>
   );
 
@@ -284,7 +304,7 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
     <div
       ref={ref}
       data-testid="footer-container"
-      className={classNames(styles.footer, {
+      className={classNames(className, styles.footer, {
         [styles.overlay]: asOverlay,
         [styles.hidden]: !showFooter,
       })}
@@ -303,21 +323,20 @@ export const CallFooter: FC<FooterProps> = ({ ref, children, vm }) => {
         {(showLogo || debugTileLayout) && logoDebugContainer}
       </div>
       {!hideControls && <div className={styles.buttons}>{buttons}</div>}
-      {!hideControls && setLayoutMode && layoutMode && (
-        <Switch<"spotlight", "grid">
-          name="layoutMode"
-          aria-label={t("layout_switch_label")}
-          leftLabel={t("layout_spotlight_label")}
-          leftValue="spotlight"
-          leftIcon={SpotlightIcon}
-          rightLabel={t("layout_grid_label")}
-          rightValue="grid"
-          rightIcon={GridIcon}
-          className={styles.layout}
-          value={layoutMode}
-          onChange={setLayoutMode}
-        />
+      {!hideControls && layoutSwitchVm && (
+        <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
       )}
     </div>
   );
+};
+
+interface TilesDebugInfoProps {
+  generation$: Behavior<number | undefined>;
+}
+
+// Isolated in its own component since the layout generation updates frequently
+// and we can avoid re-rendering the footer this way
+const TilesDebugInfo: FC<TilesDebugInfoProps> = ({ generation$ }) => {
+  const generation = useBehavior(generation$);
+  return `Tiles generation: ${generation}`;
 };

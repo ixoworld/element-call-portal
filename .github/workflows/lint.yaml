@@ -1,14 +1,22 @@
 name: Lint, format & type check
 on:
   pull_request: {}
+  workflow_call:
+    inputs:
+      matrix-js-sdk-sha:
+        type: string
+        required: false
+        description: The matrix-js-sdk commit to build against instead of the locked one
 jobs:
-  prettier:
+  lint:
     name: Lint, format & type check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # Inside a called workflow, github.repository is the caller so we need to make sure to still check out the EC repo here.
+          repository: ${{ inputs.matrix-js-sdk-sha && 'element-hq/element-call' || github.repository }}
           persist-credentials: false
       - name: Enable Corepack
         run: corepack enable
@@ -19,13 +27,16 @@ jobs:
           node-version-file: ".node-version"
       - name: Install dependencies
         # ignore-pnpmfile should never be commited. Make CI crash if it happened (`pnpmfileChecksum` is present)
-        run: "pnpm install --frozen-lockfile --ignore-pnpmfile"
-      - name: Prettier
-        run: "pnpm run prettier:check"
+        run: "scripts/layered.sh --ignore-pnpmfile"
+        env:
+          PR_HEAD_REPO_OWNER: ${{ github.event.pull_request.head.repo.owner.login }}
+          JS_SDK_GITHUB_BASE_REF: ${{ inputs.matrix-js-sdk-sha }}
+      - name: Formatting
+        run: "pnpm run format:check"
       - name: i18n
         run: "pnpm run i18n:check"
-      - name: ESLint
-        run: "pnpm run lint:eslint"
+      - name: Lint
+        run: "pnpm run lint:oxlint"
       - name: Type check
         run: "pnpm run lint:types"
       - name: Dead code analysis
